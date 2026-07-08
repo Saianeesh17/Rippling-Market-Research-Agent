@@ -1,0 +1,2 @@
+"""Competitive intelligence agent package."""
+

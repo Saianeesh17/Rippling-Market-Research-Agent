@@ -1,0 +1,18 @@
+[project]
+name = "competitive-intel-agent"
+version = "0.1.0"
+description = "Local prototype of a bounded competitive marketing intelligence agent."
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2,<9",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
