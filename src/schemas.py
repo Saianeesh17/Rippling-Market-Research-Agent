@@ -122,6 +122,16 @@ class ToolCallLog(BaseModel):
     timestamp: str
 
 
+class LLMCallLog(BaseModel):
+    stage: str
+    provider: str
+    model: str
+    success: bool
+    response_text: Optional[str] = None
+    error: Optional[str] = None
+    timestamp: str
+
+
 class SourceAnalysis(BaseModel):
     analysis_id: str
     source_id: str
@@ -221,10 +231,10 @@ class FinalReport(BaseModel):
     coverage_summary: Optional[CoverageSummary]
     coverage_gaps: List[CoverageGap]
     tool_call_logs: List[ToolCallLog]
+    llm_call_logs: List[LLMCallLog] = Field(default_factory=list)
     extracted_claims: List[ExtractedClaim]
     messaging_summary: Optional[MessagingSummary]
     recent_changes: List[RecentChange]
     rippling_opportunities: List[RipplingOpportunity]
     campaign_recommendations: List[CampaignRecommendation]
     eval_summary: Optional[EvalSummary]
-

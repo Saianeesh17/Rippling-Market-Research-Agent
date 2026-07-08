@@ -6,6 +6,5 @@ from src.llm.base import BaseLLM
 class FakeLLM(BaseLLM):
     """Deterministic placeholder for future LangChain-compatible LLM calls."""
 
-    def complete(self, prompt: str) -> str:
+    def complete(self, prompt: str, *, system_prompt: str | None = None, json_mode: bool = False) -> str:
         return f"FAKE_LLM_RESPONSE: {prompt[:120]}"
-

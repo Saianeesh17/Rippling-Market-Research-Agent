@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.config import utc_now_iso
 from src.data.dummy_sources import slugify
+from src.llm.base import BaseLLM
+from src.schemas import LLMCallLog
 from src.schemas import FinalReport
 from src.state import AgentState
 
 
-def write_outputs(state: AgentState, output_dir: str | Path = "outputs") -> AgentState:
+def write_outputs(state: AgentState, output_dir: str | Path = "outputs", llm: BaseLLM | None = None) -> AgentState:
     if not state.competitor:
         raise ValueError("Cannot write outputs without a competitor.")
     out_dir = Path(output_dir)
@@ -16,8 +19,8 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs") -> Agen
     slug = slugify(state.competitor.name) or "competitor"
     markdown_path = out_dir / f"{slug}_brief.md"
     json_path = out_dir / f"{slug}_data.json"
+    log_path = out_dir / f"{slug}_run.log"
 
-    markdown_path.write_text(_render_markdown(state), encoding="utf-8")
     report = FinalReport(
         competitor=state.competitor,
         research_plan=state.research_plan,
@@ -25,6 +28,7 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs") -> Agen
         coverage_summary=state.coverage_summary,
         coverage_gaps=state.coverage_gaps,
         tool_call_logs=state.tool_call_logs,
+        llm_call_logs=state.llm_call_logs,
         extracted_claims=state.extracted_claims,
         messaging_summary=state.messaging_summary,
         recent_changes=state.recent_changes,
@@ -32,11 +36,67 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs") -> Agen
         campaign_recommendations=state.campaign_recommendations,
         eval_summary=state.eval_summary,
     )
+    markdown = _try_render_markdown_with_llm(state, report, llm) if llm else None
+    markdown_path.write_text(markdown or _render_markdown(state), encoding="utf-8")
+    report.llm_call_logs = state.llm_call_logs
     json_path.write_text(json.dumps(report.model_dump(mode="json"), indent=2), encoding="utf-8")
     state.final_markdown_path = str(markdown_path)
     state.final_json_path = str(json_path)
-    state.logs.append(f"Generated outputs: {markdown_path}, {json_path}.")
+    state.final_log_path = str(log_path)
+    state.logs.append(f"Generated outputs: {markdown_path}, {json_path}, {log_path}.")
+    log_path.write_text(_render_run_log(state), encoding="utf-8")
     return state
+
+
+def _try_render_markdown_with_llm(state: AgentState, report: FinalReport, llm: BaseLLM) -> str | None:
+    model = getattr(llm, "model", "unknown")
+    provider = getattr(llm, "provider", "llm")
+    markdown = ""
+    try:
+        prompt = "\n".join(
+            [
+                "Generate the final markdown competitive brief from the structured dummy data below.",
+                "Rules:",
+                "- Return only markdown.",
+                "- Keep every substantive claim grounded in the provided sources, claims, opportunities, and eval summary.",
+                "- Do not invent real-world facts or private strategy.",
+                "- Preserve the required sections 1 through 10.",
+                "- Clearly caveat third-party pricing evidence as lower confidence.",
+                "",
+                json.dumps(report.model_dump(mode="json"), indent=2),
+            ]
+        )
+        markdown = llm.complete(
+            prompt,
+            system_prompt="You are an evidence-first competitive marketing brief writer for Rippling.",
+        ).strip()
+        if not markdown.startswith("#"):
+            raise ValueError("LLM report did not look like markdown with a top-level heading.")
+        state.llm_call_logs.append(
+            LLMCallLog(
+                stage="final_markdown_report",
+                provider=provider,
+                model=model,
+                success=True,
+                response_text=markdown,
+                timestamp=utc_now_iso(),
+            )
+        )
+        return markdown
+    except Exception as exc:
+        state.llm_call_logs.append(
+            LLMCallLog(
+                stage="final_markdown_report",
+                provider=provider,
+                model=model,
+                success=False,
+                response_text=markdown or None,
+                error=str(exc),
+                timestamp=utc_now_iso(),
+            )
+        )
+        state.logs.append(f"LLM report writer failed; using deterministic fallback: {exc}")
+        return None
 
 
 def _render_markdown(state: AgentState) -> str:
@@ -129,3 +189,89 @@ def _render_markdown(state: AgentState) -> str:
         ]
     )
 
+
+def _render_run_log(state: AgentState) -> str:
+    lines = [
+        "Competitive Intel Agent Run Log",
+        "===============================",
+        "",
+    ]
+    if state.competitor:
+        lines.extend(
+            [
+                f"Competitor: {state.competitor.name}",
+                f"Domain: {state.competitor.domain or 'unknown'}",
+                f"Resolved confidence: {state.competitor.confidence}",
+                "",
+            ]
+        )
+
+    lines.extend(["Pipeline Logs", "-------------"])
+    lines.extend(f"- {entry}" for entry in state.logs)
+    lines.append("")
+
+    lines.extend(["Tool Calls", "----------"])
+    for log in state.tool_call_logs:
+        status = "ok" if log.success else f"failed: {log.error}"
+        lines.append(
+            f"- {log.timestamp} {log.category} {log.tool_name}: {status}, "
+            f"sources_returned={log.sources_returned}, query={log.query or ''}"
+        )
+    lines.append("")
+
+    if state.planner_decision:
+        lines.extend(
+            [
+                "Planner Decision",
+                "----------------",
+                f"Action: {state.planner_decision.action}",
+                f"Reason: {state.planner_decision.reason}",
+                f"Next category: {state.planner_decision.next_category or ''}",
+                f"Next tool: {state.planner_decision.next_tool or ''}",
+                "",
+            ]
+        )
+
+    lines.extend(["LLM Calls And Responses", "-----------------------"])
+    if not state.llm_call_logs:
+        lines.append("- No LLM calls were made.")
+    for log in state.llm_call_logs:
+        status = "ok" if log.success else f"failed: {log.error}"
+        lines.extend(
+            [
+                f"Stage: {log.stage}",
+                f"Provider: {log.provider}",
+                f"Model: {log.model}",
+                f"Timestamp: {log.timestamp}",
+                f"Status: {status}",
+                "Response:",
+                log.response_text or "<empty>",
+                "",
+            ]
+        )
+    lines.append("")
+
+    if state.eval_summary:
+        lines.extend(
+            [
+                "Eval Summary",
+                "------------",
+                f"Overall quality score: {state.eval_summary.overall_quality_score}",
+                f"Claim grounding score: {state.eval_summary.claim_grounding_score}",
+                f"Third-party caveat score: {state.eval_summary.third_party_caveat_score}",
+                f"Weak sections: {', '.join(state.eval_summary.weak_sections) or 'none'}",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "Generated Files",
+            "---------------",
+            f"Markdown: {state.final_markdown_path or ''}",
+            f"JSON: {state.final_json_path or ''}",
+            f"Log: {state.final_log_path or ''}",
+            "",
+        ]
+    )
+    return "\n".join(lines)

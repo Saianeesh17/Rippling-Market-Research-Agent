@@ -6,14 +6,23 @@ from collections import defaultdict
 from src.graph import run_graph
 
 
+def _print_indented(text: str, prefix: str) -> None:
+    for line in text.splitlines() or [""]:
+        print(f"{prefix}{line}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the competitive intelligence agent.")
     parser.add_argument("--competitor", required=True, help="Competitor name or domain.")
     parser.add_argument("--interactive", action="store_true", help="Reserved for future interactive replanning.")
     parser.add_argument("--output-dir", default="outputs", help="Directory for generated markdown and JSON files.")
+    llm_group = parser.add_mutually_exclusive_group()
+    llm_group.add_argument("--use-llm", action="store_true", help="Use the configured OpenAI-compatible LLM if possible.")
+    llm_group.add_argument("--no-llm", action="store_true", help="Disable LLM calls and use deterministic fallback.")
     args = parser.parse_args()
 
-    state = run_graph(args.competitor, output_dir=args.output_dir, interactive=args.interactive)
+    use_llm = True if args.use_llm else False if args.no_llm else None
+    state = run_graph(args.competitor, output_dir=args.output_dir, interactive=args.interactive, use_llm=use_llm)
     competitor = state.competitor
     assert competitor is not None
 
@@ -48,10 +57,20 @@ def main() -> None:
     if state.planner_decision:
         print(state.planner_decision.reason)
 
+    if state.llm_call_logs:
+        print()
+        print("LLM calls:")
+        for log in state.llm_call_logs:
+            status = "ok" if log.success else f"failed ({log.error})"
+            print(f"- {log.stage} using {log.model}: {status}")
+            print("  Response:")
+            _print_indented(log.response_text or "<empty>", "    ")
+
     print()
     print("Generated:")
     print(f"- {state.final_markdown_path}")
     print(f"- {state.final_json_path}")
+    print(f"- {state.final_log_path}")
 
     if state.eval_summary:
         print()
@@ -64,4 +83,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
