@@ -39,6 +39,7 @@ class ToolUsingSourceDiscoveryAgent:
 
         query = self._query_for(state.competitor.name)
         sources: List[SourceRecord] = []
+        tool_context: dict[str, str] = {}
         for tool in self._selected_tools(specific_tool_name):
             if self.category not in tool.allowed_agents:
                 log = ToolCallLog(
@@ -60,9 +61,12 @@ class ToolUsingSourceDiscoveryAgent:
                         domain=state.competitor.domain,
                         query=query,
                         category=self.category,
+                        linkedin_company_url=tool_context.get("linkedin_company_url"),
                         allow_third_party=self.category in {"pricing", "press_news", "comparison_pages"},
                     )
                 )
+                if result.metadata.get("linkedin_company_url"):
+                    tool_context["linkedin_company_url"] = str(result.metadata["linkedin_company_url"])
                 category_sources = [
                     score_source_relevance(source, self.category)
                     for source in result.sources
@@ -76,6 +80,8 @@ class ToolUsingSourceDiscoveryAgent:
                         query=query,
                         success=result.success,
                         sources_returned=len(category_sources),
+                        api_request=result.metadata.get("api_request"),
+                        api_response=result.metadata.get("api_response"),
                         error=result.error,
                         timestamp=utc_now_iso(),
                     )
@@ -144,4 +150,3 @@ def run_source_discovery(
         state.discovered_sources = state.discovered_sources[: state.research_plan.max_sources]
     state.logs.append(f"Discovered {len(state.discovered_sources)} public sources using bounded tools.")
     return state
-

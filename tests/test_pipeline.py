@@ -29,7 +29,17 @@ def test_pipeline_creates_markdown_and_json_files(tmp_path):
     payload = json.loads(data.read_text(encoding="utf-8"))
     assert payload["competitor"]["name"] == "Gusto"
     assert payload["tool_call_logs"]
-    assert "Tool Calls" in log.read_text(encoding="utf-8")
+    assert payload["category_report_sections"]
+    log_text = log.read_text(encoding="utf-8")
+    assert "Tool Calls" in log_text
+    assert "Category Report Sections" in log_text
+
+
+def test_category_report_sections_include_inline_citations(tmp_path):
+    state = run_graph("Gusto", output_dir=tmp_path)
+
+    assert state.category_report_sections
+    assert any("[1]" in section.markdown and "Sources" in section.markdown for section in state.category_report_sections)
 
 
 def test_every_claim_is_grounded(tmp_path):

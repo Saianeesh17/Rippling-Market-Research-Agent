@@ -90,6 +90,7 @@ class ToolInput(BaseModel):
     domain: Optional[str] = None
     query: Optional[str] = None
     category: Optional[str] = None
+    linkedin_company_url: Optional[str] = None
     max_results: int = 10
     allow_third_party: bool = True
     preferred_source_type: Optional[str] = None
@@ -118,6 +119,8 @@ class ToolCallLog(BaseModel):
     query: Optional[str] = None
     success: bool
     sources_returned: int
+    api_request: Optional[Dict[str, Any]] = None
+    api_response: Optional[Any] = None
     error: Optional[str] = None
     timestamp: str
 
@@ -138,6 +141,23 @@ class SourceAnalysis(BaseModel):
     category: str
     observations: List[str]
     themes: List[str]
+    confidence: float
+
+
+class ReportCitation(BaseModel):
+    source_id: str
+    title: str
+    url: Optional[str] = None
+
+
+class CategoryReportSection(BaseModel):
+    section_id: str
+    category: str
+    title: str
+    markdown: str
+    source_ids: List[str]
+    citations: List[ReportCitation] = Field(default_factory=list)
+    generated_by: str
     confidence: float
 
 
@@ -232,6 +252,7 @@ class FinalReport(BaseModel):
     coverage_gaps: List[CoverageGap]
     tool_call_logs: List[ToolCallLog]
     llm_call_logs: List[LLMCallLog] = Field(default_factory=list)
+    category_report_sections: List[CategoryReportSection] = Field(default_factory=list)
     extracted_claims: List[ExtractedClaim]
     messaging_summary: Optional[MessagingSummary]
     recent_changes: List[RecentChange]

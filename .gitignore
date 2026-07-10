@@ -209,6 +209,8 @@ tempCodeRunnerFile.py
 # Generated agent reports
 outputs/*.md
 outputs/*.json
+outputs/*.log
+.agent_cache/
 
 # PyPI configuration file
 .pypirc

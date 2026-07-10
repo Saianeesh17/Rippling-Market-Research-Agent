@@ -8,6 +8,7 @@ from src.llm.service import create_llm
 from src.nodes.campaign_angle_generator import generate_campaign_angles
 from src.nodes.competitor_resolver import resolve_competitor
 from src.nodes.coverage_gap_detector import detect_coverage_gaps
+from src.nodes.category_report_sections import generate_category_report_sections
 from src.nodes.eval_layer import evaluate_output
 from src.nodes.evidence_extraction import extract_evidence_claims
 from src.nodes.messaging_positioning import summarize_messaging
@@ -58,6 +59,7 @@ def run_graph(
 
     state = analyze_sources(state)
     state = extract_evidence_claims(state)
+    state = generate_category_report_sections(state, llm=llm)
     state = summarize_messaging(state)
     state = detect_recent_changes(state)
     state = map_rippling_opportunities(state)

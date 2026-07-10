@@ -2,3 +2,5 @@ pydantic>=2.7,<3
 pytest>=8.2,<9
 openai>=2.0,<3
 python-dotenv>=1.0,<2
+httpx>=0.28,<1
+exa-py==2.14.0

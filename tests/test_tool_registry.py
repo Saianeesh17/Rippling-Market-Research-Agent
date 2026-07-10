@@ -7,6 +7,8 @@ from src.nodes.research_planner import create_research_plan
 from src.nodes.source_coverage_review import review_source_coverage
 from src.nodes.source_discovery import run_source_discovery
 from src.schemas import CoverageGap, ToolInput, ToolResult
+from src.schemas import SourceRecord
+from src.config import utc_now_iso
 from src.state import AgentState
 from src.tools.base import BaseSourceTool
 from src.tools.registry import TOOL_REGISTRY, get_tools_for_category
@@ -71,3 +73,87 @@ def test_planner_decision_can_choose_specific_next_tool():
     assert state.planner_decision
     assert state.planner_decision.action == "search_deeper"
     assert state.planner_decision.next_tool == "DummyLinkedInApiTool"
+
+
+class ApiOutputTool(BaseSourceTool):
+    name = "ApiOutputTool"
+    description = "Returns API metadata for logging tests."
+    source_category = "social"
+    reliability_weight = 0.8
+    allowed_agents = ["social"]
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            sources=[
+                SourceRecord(
+                    source_id="api_output_source",
+                    competitor_name=tool_input.competitor_name,
+                    source_type="social",
+                    title="API output source",
+                    content="Real API output test source.",
+                    is_official=True,
+                    discovered_at=utc_now_iso(),
+                    discovery_tool=self.name,
+                    reliability_weight=0.8,
+                    relevance_score=0.5,
+                    confidence_modifier=0.8,
+                )
+            ],
+            metadata={
+                "api_request": {"json": {"companyUrls": ["test"], "maxPostsPerCompany": 5}},
+                "api_response": {"items": [{"text": "hello"}]},
+            },
+        )
+
+
+def test_api_outputs_are_captured_in_tool_call_logs(monkeypatch):
+    monkeypatch.setitem(TOOL_REGISTRY, "social", [ApiOutputTool()])
+    state = AgentState(user_input="Gusto")
+    state = resolve_competitor(state)
+    state = create_research_plan(state)
+    state = run_source_discovery(state, category="social")
+
+    log = state.tool_call_logs[0]
+    assert log.api_request == {"json": {"companyUrls": ["test"], "maxPostsPerCompany": 5}}
+    assert log.api_response == {"items": [{"text": "hello"}]}
+
+
+class LinkedinResolverTool(BaseSourceTool):
+    name = "LinkedinResolverTool"
+    description = "Resolves LinkedIn URL for handoff test."
+    source_category = "social"
+    reliability_weight = 0.7
+    allowed_agents = ["social"]
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            metadata={"linkedin_company_url": "https://www.linkedin.com/company/gustohq/posts/?feedView=all"},
+        )
+
+
+class LinkedinConsumerTool(BaseSourceTool):
+    name = "LinkedinConsumerTool"
+    description = "Consumes LinkedIn URL for handoff test."
+    source_category = "social"
+    reliability_weight = 0.7
+    allowed_agents = ["social"]
+    received_url = None
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        LinkedinConsumerTool.received_url = tool_input.linkedin_company_url
+        return ToolResult(tool_name=self.name, success=True)
+
+
+def test_exa_resolved_linkedin_url_is_available_to_later_social_tools(monkeypatch):
+    LinkedinConsumerTool.received_url = None
+    monkeypatch.setitem(TOOL_REGISTRY, "social", [LinkedinResolverTool(), LinkedinConsumerTool()])
+    state = AgentState(user_input="Gusto")
+    state = resolve_competitor(state)
+    state = create_research_plan(state)
+    state = run_source_discovery(state, category="social")
+
+    assert LinkedinConsumerTool.received_url == "https://www.linkedin.com/company/gustohq/posts/?feedView=all"

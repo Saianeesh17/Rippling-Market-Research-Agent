@@ -12,6 +12,67 @@ Given a competitor name or domain, the agent generates:
 
 The prototype includes dummy source content for Gusto, Deel, BambooHR, and a lower-confidence generic fallback.
 
+## Real API Tools
+
+The social discovery category can call a real Apify actor for public LinkedIn company posts:
+
+```text
+EXA_API_KEY=...
+APIFY_TOKEN=...
+APIFY_LINKEDIN_MAX_POSTS_PER_COMPANY=5
+AGENT_CACHE_DIR=.agent_cache
+APIFY_LINKEDIN_CACHE_TTL_HOURS=5
+```
+
+Before Apify runs, the social source agent calls Exa to resolve the competitor's LinkedIn company URL. That prevents the Apify tool from guessing based on the company name alone. The Exa search uses:
+
+```json
+{
+  "query": "{competitor} official LinkedIn company page",
+  "type": "auto",
+  "num_results": 5,
+  "include_domains": ["linkedin.com"],
+  "contents": {"highlights": true}
+}
+```
+
+The resolved LinkedIn company URL is then passed into the Apify actor as `companyUrls[0]`.
+
+The actor endpoint is:
+
+```text
+https://api.apify.com/v2/acts/automation-lab~linkedin-company-posts-scraper/run-sync-get-dataset-items
+```
+
+For now the tool always sends `maxPostsPerCompany=5` and `maxCompanies=1` so test runs stay small. If `APIFY_TOKEN` is missing or the actor fails, the pipeline logs the failed tool call and continues with dummy social tools.
+
+Successful API tool calls attach redacted request details and raw API output to `tool_call_logs` in the JSON report. The same API request/output blocks are written into `outputs/{competitor}_run.log`.
+
+### API Cache
+
+To reduce API spend, real API tools use a local JSON cache:
+
+- Exa LinkedIn URL resolution is cached indefinitely by competitor/domain. The tool only calls Exa on cache miss.
+- Apify LinkedIn post data is cached by LinkedIn URL and actor input. The default TTL is 5 hours because company posts can change.
+- `AGENT_CACHE_DIR` controls the cache location. It defaults to `.agent_cache`, which is ignored by git.
+- `APIFY_LINKEDIN_CACHE_TTL_HOURS` controls the Apify cache expiry.
+
+Cache hits are still logged in `tool_call_logs` with `api_request.cache_hit=true` and `api_response.cache_hit=true`.
+
+## Category Report Subagents
+
+After source analysis and evidence extraction, each research category gets its own report-section subagent:
+
+- Website positioning
+- Product pages
+- Pricing and packaging
+- Paid ads
+- Social and LinkedIn posts
+- Press and news
+- Comparison pages
+
+Each subagent receives only its category's sources and analyses and generates a markdown section with numeric inline citations such as `[1]`. Each section ends with a `Sources` list mapping citation numbers to source titles and URLs. The final LLM call is reserved for synthesis: executive summary, confidence and gaps, Rippling opportunities, and campaign implications.
+
 ## Architecture
 
 ```text
@@ -72,7 +133,7 @@ The `.venv/` directory is ignored by git.
 
 ## Optional LLM Mode
 
-The repo includes `.env` and `.env.example`. For Groq, create a Groq API key and paste it into `.env`:
+The repo includes `.env` and `.env.example`. Groq is the default provider:
 
 ```text
 LLM_PROVIDER=groq
@@ -81,6 +142,19 @@ GROQ_API_KEY=...
 GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_OPENAI_BASE_URL=https://api.groq.com/openai/v1
 ```
+
+Anthropic models through the Qualcomm QGenie gateway are also supported:
+
+```text
+LLM_PROVIDER=anthropic
+USE_LLM=auto
+ANTHROPIC_BASE_URL=https://qgenie-api.qualcomm.com/
+ANTHROPIC_AUTH_TOKEN=...
+ANTHROPIC_VERIFY_SSL=false
+ANTHROPIC_MODEL=claude-opus-4-8
+```
+
+The code uses Anthropic's native Messages API shape against `{ANTHROPIC_BASE_URL}/v1/messages`. `ANTHROPIC_AUTH_TOKEN` is passed as the gateway credential. `ANTHROPIC_VERIFY_SSL=false` disables SSL verification only for that Anthropic/QGenie client.
 
 The app uses Groq through its OpenAI-compatible endpoint, so the same chat-completions wrapper works for planner decisions and final report writing.
 
@@ -104,7 +178,7 @@ OPENAI_MODEL=gpt-5.5
 OPENAI_BASE_URL=
 ```
 
-With `LLM_PROVIDER=auto`, Groq is preferred when `GROQ_API_KEY` is set, then Gemini when `GEMINI_API_KEY` is set, then OpenAI when `OPENAI_API_KEY` is set. With `USE_LLM=auto`, the CLI uses an LLM when the selected provider has a key and otherwise uses deterministic fallback logic. You can override LLM usage per run:
+With `LLM_PROVIDER=auto`, Anthropic/QGenie is preferred when `ANTHROPIC_AUTH_TOKEN` is set, then Groq, then Gemini, then OpenAI. With `USE_LLM=auto`, the CLI uses an LLM when the selected provider has a key and otherwise uses deterministic fallback logic. You can override LLM usage per run:
 
 ```bash
 python -m src.main --competitor "Gusto" --use-llm

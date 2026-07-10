@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Dict, List
 
 from src.tools.base import BaseSourceTool
+from src.tools.apify_linkedin_tool import ApifyLinkedInCompanyPostsTool
+from src.tools.exa_tools import ExaLinkedInCompanySearchTool
 from src.tools.dummy_tools import (
     DummyComparisonPageTool,
     DummyGoogleAdsTransparencyTool,
@@ -50,6 +52,8 @@ TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
         DummyGoogleAdsTransparencyTool(),
     ],
     "social": [
+        ExaLinkedInCompanySearchTool(),
+        ApifyLinkedInCompanyPostsTool(),
         DummyTwitterApiTool(),
         DummyLinkedInApiTool(),
     ],
@@ -68,4 +72,3 @@ TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
 
 def get_tools_for_category(category: str) -> List[BaseSourceTool]:
     return TOOL_REGISTRY.get(category, [])
-

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from src.schemas import (
     CampaignRecommendation,
+    CategoryReportSection,
     CompetitorProfile,
     CoverageGap,
     CoverageSummary,
@@ -36,6 +37,7 @@ class AgentState(BaseModel):
     tool_call_logs: List[ToolCallLog] = Field(default_factory=list)
     llm_call_logs: List[LLMCallLog] = Field(default_factory=list)
     source_analyses: List[SourceAnalysis] = Field(default_factory=list)
+    category_report_sections: List[CategoryReportSection] = Field(default_factory=list)
     extracted_claims: List[ExtractedClaim] = Field(default_factory=list)
     messaging_summary: Optional[MessagingSummary] = None
     recent_changes: List[RecentChange] = Field(default_factory=list)
