@@ -9,6 +9,25 @@ from src.config import utc_now_iso
 from src.data.dummy_sources import slugify
 from src.schemas import SourceRecord, ToolInput, ToolResult
 from src.tools.base import BaseSourceTool
+from src.tools.domain_utils import https_url_for_domain, normalize_company_domain
+
+
+EXCLUDED_COMPANY_DOMAIN_SUFFIXES = {
+    "linkedin.com",
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+    "instagram.com",
+    "youtube.com",
+    "crunchbase.com",
+    "wikipedia.org",
+    "glassdoor.com",
+    "g2.com",
+    "capterra.com",
+    "trustpilot.com",
+    "bloomberg.com",
+    "forbes.com",
+}
 
 
 class ExaLinkedInCompanySearchTool(BaseSourceTool):
@@ -174,6 +193,147 @@ class ExaLinkedInCompanySearchTool(BaseSourceTool):
         )
 
 
+class ExaCompanyDomainSearchTool(BaseSourceTool):
+    name = "ExaCompanyDomainSearchTool"
+    description = "Real Exa web search adapter that resolves a competitor's official website domain."
+    source_category = "paid_ads"
+    reliability_weight = 0.7
+    requires_api_key = True
+    allowed_agents = ["paid_ads"]
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        query = self._query(tool_input)
+        cache_key = self._cache_key(tool_input)
+        api_request = {
+            "sdk": "exa_py.Exa.search",
+            "query": query,
+            "type": "auto",
+            "num_results": 5,
+            "contents": {"highlights": True},
+        }
+
+        cached = get_cached_json("company_domain", cache_key)
+        if cached and cached.get("company_domain"):
+            resolved_domain = str(cached["company_domain"])
+            return ToolResult(
+                tool_name=self.name,
+                success=True,
+                metadata={
+                    "resolved_company_domain": resolved_domain,
+                    "company_url": https_url_for_domain(resolved_domain),
+                    "cache": {"hit": True, "namespace": "company_domain", "key": cache_key},
+                    "api_request": {"cache_hit": True, "would_have_requested": api_request},
+                    "api_response": {"cache_hit": True, "cached_value": cached},
+                },
+            )
+
+        known_domain = normalize_company_domain(tool_input.domain)
+        if known_domain:
+            payload = {
+                "company_domain": known_domain,
+                "company_url": https_url_for_domain(known_domain),
+                "source": "competitor_profile",
+            }
+            set_cached_json("company_domain", cache_key, payload)
+            return ToolResult(
+                tool_name=self.name,
+                success=True,
+                metadata={
+                    "resolved_company_domain": known_domain,
+                    "company_url": payload["company_url"],
+                    "cache": {"hit": False, "namespace": "company_domain", "key": cache_key},
+                    "api_request": {"cache_hit": False, "skipped": "domain_already_available"},
+                    "api_response": {"cache_hit": False, "selected_company_domain": known_domain, "source": "competitor_profile"},
+                },
+            )
+
+        api_key = os.getenv("EXA_API_KEY", "").strip()
+        if not api_key:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                error="EXA_API_KEY is not set and company domain cache missed; cannot resolve website domain before Adyntel.",
+                metadata={
+                    "cache": {"hit": False, "namespace": "company_domain", "key": cache_key},
+                    "api_request": api_request,
+                },
+            )
+
+        try:
+            results = self._search(api_key, api_request)
+        except Exception as exc:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                error=str(exc),
+                metadata={
+                    "cache": {"hit": False, "namespace": "company_domain", "key": cache_key},
+                    "api_request": api_request,
+                },
+            )
+
+        resolved_domain = _select_company_domain(results)
+        if resolved_domain:
+            set_cached_json(
+                "company_domain",
+                cache_key,
+                {
+                    "company_domain": resolved_domain,
+                    "company_url": https_url_for_domain(resolved_domain),
+                    "results": results,
+                },
+            )
+
+        return ToolResult(
+            tool_name=self.name,
+            success=bool(resolved_domain),
+            error=None if resolved_domain else "Exa did not return a likely official company website domain.",
+            metadata={
+                "resolved_company_domain": resolved_domain,
+                "company_url": https_url_for_domain(resolved_domain),
+                "cache": {"hit": False, "namespace": "company_domain", "key": cache_key},
+                "api_request": api_request,
+                "api_response": {
+                    "selected_company_domain": resolved_domain,
+                    "results": results,
+                },
+            },
+        )
+
+    def _search(self, api_key: str, request: dict[str, Any]) -> list[dict[str, Any]]:
+        from exa_py import Exa
+
+        exa = Exa(api_key=api_key)
+        response = exa.search(
+            request["query"],
+            type=request["type"],
+            num_results=request["num_results"],
+            contents=request["contents"],
+        )
+        normalized = []
+        for result in getattr(response, "results", []) or []:
+            highlights = getattr(result, "highlights", None)
+            normalized.append(
+                {
+                    "title": getattr(result, "title", None),
+                    "url": getattr(result, "url", None),
+                    "highlights": highlights if isinstance(highlights, list) else [],
+                }
+            )
+        return normalized
+
+    def _query(self, tool_input: ToolInput) -> str:
+        return f"{tool_input.competitor_name} official website"
+
+    def _cache_key(self, tool_input: ToolInput) -> str:
+        return "|".join(
+            [
+                tool_input.competitor_name.strip().lower(),
+                normalize_company_domain(tool_input.domain),
+            ]
+        )
+
+
 def _select_linkedin_company_url(results: list[dict[str, Any]]) -> str | None:
     for result in results:
         url = _normalize_linkedin_company_url(str(result.get("url", "")))
@@ -198,3 +358,16 @@ def _normalize_linkedin_company_url(url: str) -> str | None:
     if not slug:
         return None
     return f"https://www.linkedin.com/company/{slug}/posts/?feedView=all"
+
+
+def _select_company_domain(results: list[dict[str, Any]]) -> str | None:
+    for result in results:
+        domain = normalize_company_domain(str(result.get("url", "")))
+        if domain and not _is_excluded_company_domain(domain):
+            return domain
+    return None
+
+
+def _is_excluded_company_domain(domain: str) -> bool:
+    normalized = normalize_company_domain(domain)
+    return any(normalized == excluded or normalized.endswith(f".{excluded}") for excluded in EXCLUDED_COMPANY_DOMAIN_SUFFIXES)

@@ -157,3 +157,42 @@ def test_exa_resolved_linkedin_url_is_available_to_later_social_tools(monkeypatc
     state = run_source_discovery(state, category="social")
 
     assert LinkedinConsumerTool.received_url == "https://www.linkedin.com/company/gustohq/posts/?feedView=all"
+
+
+class DomainResolverTool(BaseSourceTool):
+    name = "DomainResolverTool"
+    description = "Resolves company domain for handoff test."
+    source_category = "paid_ads"
+    reliability_weight = 0.7
+    allowed_agents = ["paid_ads"]
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            metadata={"resolved_company_domain": "gusto.com"},
+        )
+
+
+class DomainConsumerTool(BaseSourceTool):
+    name = "DomainConsumerTool"
+    description = "Consumes company domain for handoff test."
+    source_category = "paid_ads"
+    reliability_weight = 0.7
+    allowed_agents = ["paid_ads"]
+    received_domain = None
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        DomainConsumerTool.received_domain = tool_input.resolved_company_domain
+        return ToolResult(tool_name=self.name, success=True)
+
+
+def test_exa_resolved_company_domain_is_available_to_later_paid_ad_tools(monkeypatch):
+    DomainConsumerTool.received_domain = None
+    monkeypatch.setitem(TOOL_REGISTRY, "paid_ads", [DomainResolverTool(), DomainConsumerTool()])
+    state = AgentState(user_input="Gusto")
+    state = resolve_competitor(state)
+    state = create_research_plan(state)
+    state = run_source_discovery(state, category="paid_ads")
+
+    assert DomainConsumerTool.received_domain == "gusto.com"

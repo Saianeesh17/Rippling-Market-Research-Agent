@@ -14,7 +14,7 @@ The prototype includes dummy source content for Gusto, Deel, BambooHR, and a low
 
 ## Real API Tools
 
-The social discovery category can call a real Apify actor for public LinkedIn company posts:
+The social discovery category can call a real Apify actor for public LinkedIn company posts, and the paid ads category can call Adyntel for public Meta, LinkedIn, and Google ad library results:
 
 ```text
 EXA_API_KEY=...
@@ -22,9 +22,15 @@ APIFY_TOKEN=...
 APIFY_LINKEDIN_MAX_POSTS_PER_COMPANY=5
 AGENT_CACHE_DIR=.agent_cache
 APIFY_LINKEDIN_CACHE_TTL_HOURS=5
+
+ADYNTEL_EMAIL=...
+ADYNTEL_API_KEY=...
+ADYNTEL_BASE_URL=https://api.adyntel.com
+ADYNTEL_MAX_ADS_PER_PLATFORM=5
+ADYNTEL_AD_CACHE_TTL_HOURS=120
 ```
 
-Before Apify runs, the social source agent calls Exa to resolve the competitor's LinkedIn company URL. That prevents the Apify tool from guessing based on the company name alone. The Exa search uses:
+Before Apify runs, the social source agent calls Exa to resolve the competitor's LinkedIn company URL. That prevents the Apify tool from guessing based on the company name alone. The Exa LinkedIn search uses:
 
 ```json
 {
@@ -46,6 +52,27 @@ https://api.apify.com/v2/acts/automation-lab~linkedin-company-posts-scraper/run-
 
 For now the tool always sends `maxPostsPerCompany=5` and `maxCompanies=1` so test runs stay small. If `APIFY_TOKEN` is missing or the actor fails, the pipeline logs the failed tool call and continues with dummy social tools.
 
+Before Adyntel runs, the paid ads source agent resolves the competitor's website domain. If the competitor profile already has a domain, it normalizes that value to bare `company.com` format and skips Exa. If the profile has no domain, it calls Exa with:
+
+```json
+{
+  "query": "{competitor} official website",
+  "type": "auto",
+  "num_results": 5,
+  "contents": {"highlights": true}
+}
+```
+
+The resolved domain is passed to the Adyntel direct REST endpoints:
+
+```text
+POST https://api.adyntel.com/facebook
+POST https://api.adyntel.com/linkedin
+POST https://api.adyntel.com/google
+```
+
+For now each Adyntel platform adapter logs and returns at most 5 ads. If `ADYNTEL_EMAIL` or `ADYNTEL_API_KEY` is missing, the pipeline logs the failed tool call and continues with dummy paid-ad tools.
+
 Successful API tool calls attach redacted request details and raw API output to `tool_call_logs` in the JSON report. The same API request/output blocks are written into `outputs/{competitor}_run.log`.
 
 ### API Cache
@@ -53,9 +80,12 @@ Successful API tool calls attach redacted request details and raw API output to 
 To reduce API spend, real API tools use a local JSON cache:
 
 - Exa LinkedIn URL resolution is cached indefinitely by competitor/domain. The tool only calls Exa on cache miss.
+- Exa company domain resolution is cached indefinitely by competitor/domain. Existing competitor profile domains are normalized and cached without an Exa call.
 - Apify LinkedIn post data is cached by LinkedIn URL and actor input. The default TTL is 5 hours because company posts can change.
+- Adyntel ad data is cached by platform/domain/input. The default TTL is 120 hours, or 5 days, because ad libraries can change but do not need to be re-queried during quick iteration.
 - `AGENT_CACHE_DIR` controls the cache location. It defaults to `.agent_cache`, which is ignored by git.
 - `APIFY_LINKEDIN_CACHE_TTL_HOURS` controls the Apify cache expiry.
+- `ADYNTEL_AD_CACHE_TTL_HOURS` controls the Adyntel cache expiry.
 
 Cache hits are still logged in `tool_call_logs` with `api_request.cache_hit=true` and `api_response.cache_hit=true`.
 

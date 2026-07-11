@@ -91,6 +91,7 @@ class ToolInput(BaseModel):
     query: Optional[str] = None
     category: Optional[str] = None
     linkedin_company_url: Optional[str] = None
+    resolved_company_domain: Optional[str] = None
     max_results: int = 10
     allow_third_party: bool = True
     preferred_source_type: Optional[str] = None

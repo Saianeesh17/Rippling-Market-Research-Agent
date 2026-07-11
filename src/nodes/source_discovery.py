@@ -62,11 +62,14 @@ class ToolUsingSourceDiscoveryAgent:
                         query=query,
                         category=self.category,
                         linkedin_company_url=tool_context.get("linkedin_company_url"),
+                        resolved_company_domain=tool_context.get("resolved_company_domain"),
                         allow_third_party=self.category in {"pricing", "press_news", "comparison_pages"},
                     )
                 )
                 if result.metadata.get("linkedin_company_url"):
                     tool_context["linkedin_company_url"] = str(result.metadata["linkedin_company_url"])
+                if result.metadata.get("resolved_company_domain"):
+                    tool_context["resolved_company_domain"] = str(result.metadata["resolved_company_domain"])
                 category_sources = [
                     score_source_relevance(source, self.category)
                     for source in result.sources
