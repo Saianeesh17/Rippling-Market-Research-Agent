@@ -5,7 +5,7 @@ from src.nodes.coverage_gap_detector import detect_coverage_gaps
 from src.nodes.planner_decision import decide_next_step
 from src.nodes.research_planner import create_research_plan
 from src.nodes.source_coverage_review import review_source_coverage
-from src.nodes.source_discovery import run_source_discovery
+from src.nodes.source_discovery import limit_sources_preserving_categories, run_source_discovery
 from src.schemas import CoverageGap, ToolInput, ToolResult
 from src.schemas import SourceRecord
 from src.config import utc_now_iso
@@ -196,3 +196,44 @@ def test_exa_resolved_company_domain_is_available_to_later_paid_ad_tools(monkeyp
     state = run_source_discovery(state, category="paid_ads")
 
     assert DomainConsumerTool.received_domain == "gusto.com"
+
+
+def test_source_limit_preserves_later_category_coverage():
+    sources = []
+    for index in range(10):
+        sources.append(
+            SourceRecord(
+                source_id=f"website_{index}",
+                competitor_name="Gusto",
+                source_type="website_positioning",
+                title=f"Website source {index}",
+                content="Website positioning content.",
+                is_official=True,
+                discovered_at=utc_now_iso(),
+                discovery_tool="test",
+                reliability_weight=0.8,
+                relevance_score=0.5,
+                confidence_modifier=0.8,
+            )
+        )
+    for index in range(3):
+        sources.append(
+            SourceRecord(
+                source_id=f"press_{index}",
+                competitor_name="Gusto",
+                source_type="press_news",
+                title=f"Press source {index}",
+                content="Press announcement content.",
+                is_third_party=True,
+                discovered_at=utc_now_iso(),
+                discovery_tool="test",
+                reliability_weight=0.6,
+                relevance_score=0.5,
+                confidence_modifier=0.7,
+            )
+        )
+
+    limited = limit_sources_preserving_categories(sources, 5)
+
+    assert len(limited) == 5
+    assert any(source.source_type == "press_news" for source in limited)

@@ -1,2 +1,3 @@
+from src.tools.exa_tools import ExaCompanyDomainSearchTool
+from src.tools.exa_research_tools import ExaPricingResearchTool
 from src.tools.dummy_tools import DummyPricingFAQTool, DummyPricingPageTool, DummyThirdPartyPricingTool
-

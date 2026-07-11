@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Optional
 
-from src.config import utc_now_iso
+from src.config import SOURCE_CATEGORIES, utc_now_iso
 from src.schemas import SourceRecord, ToolCallLog, ToolInput
 from src.state import AgentState
 from src.tools.base import BaseSourceTool
@@ -150,6 +150,36 @@ def run_source_discovery(
         state.discovered_sources.extend(dedupe_sources(state.discovered_sources, found))
 
     if state.research_plan.max_sources and len(state.discovered_sources) > state.research_plan.max_sources:
-        state.discovered_sources = state.discovered_sources[: state.research_plan.max_sources]
+        state.discovered_sources = limit_sources_preserving_categories(
+            state.discovered_sources,
+            state.research_plan.max_sources,
+        )
     state.logs.append(f"Discovered {len(state.discovered_sources)} public sources using bounded tools.")
     return state
+
+
+def limit_sources_preserving_categories(sources: List[SourceRecord], max_sources: int) -> List[SourceRecord]:
+    if max_sources <= 0 or len(sources) <= max_sources:
+        return sources
+
+    grouped: dict[str, list[SourceRecord]] = {category: [] for category in SOURCE_CATEGORIES}
+    grouped["__other__"] = []
+    for source in sources:
+        bucket = source.source_type if source.source_type in grouped else "__other__"
+        grouped[bucket].append(source)
+
+    selected: list[SourceRecord] = []
+    categories = [*SOURCE_CATEGORIES, "__other__"]
+    while len(selected) < max_sources:
+        added_this_round = False
+        for category in categories:
+            category_sources = grouped.get(category, [])
+            if not category_sources:
+                continue
+            selected.append(category_sources.pop(0))
+            added_this_round = True
+            if len(selected) >= max_sources:
+                break
+        if not added_this_round:
+            break
+    return selected

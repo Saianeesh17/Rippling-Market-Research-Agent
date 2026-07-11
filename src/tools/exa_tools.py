@@ -199,7 +199,7 @@ class ExaCompanyDomainSearchTool(BaseSourceTool):
     source_category = "paid_ads"
     reliability_weight = 0.7
     requires_api_key = True
-    allowed_agents = ["paid_ads"]
+    allowed_agents = ["website_positioning", "product_pages", "pricing", "paid_ads", "press_news"]
 
     def run(self, tool_input: ToolInput) -> ToolResult:
         query = self._query(tool_input)

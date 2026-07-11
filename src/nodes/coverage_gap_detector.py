@@ -5,12 +5,12 @@ from src.state import AgentState
 
 
 NEXT_TOOL_BY_CATEGORY = {
-    "website_positioning": "DummyWebSearchTool",
-    "product_pages": "DummyProductPageTool",
-    "pricing": "DummyThirdPartyPricingTool",
+    "website_positioning": "ExaWebsitePositioningTool",
+    "product_pages": "ExaProductPagesTool",
+    "pricing": "ExaPricingResearchTool",
     "paid_ads": "DummyMetaAdLibraryTool",
     "social": "DummyLinkedInApiTool",
-    "press_news": "DummyNewsSearchTool",
+    "press_news": "ExaPressNewsResearchTool",
     "comparison_pages": "DummyComparisonPageTool",
 }
 
@@ -34,4 +34,3 @@ def detect_coverage_gaps(state: AgentState) -> AgentState:
     state.coverage_gaps = gaps
     state.logs.append(f"Detected {len(gaps)} coverage gaps or caveats.")
     return state
-

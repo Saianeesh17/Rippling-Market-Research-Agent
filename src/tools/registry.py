@@ -5,6 +5,12 @@ from typing import Dict, List
 from src.tools.base import BaseSourceTool
 from src.tools.adyntel_ads_tool import AdyntelGoogleAdsTool, AdyntelLinkedInAdsTool, AdyntelMetaAdsTool
 from src.tools.apify_linkedin_tool import ApifyLinkedInCompanyPostsTool
+from src.tools.exa_research_tools import (
+    ExaPressNewsResearchTool,
+    ExaPricingResearchTool,
+    ExaProductPagesTool,
+    ExaWebsitePositioningTool,
+)
 from src.tools.exa_tools import ExaCompanyDomainSearchTool, ExaLinkedInCompanySearchTool
 from src.tools.dummy_tools import (
     DummyComparisonPageTool,
@@ -28,6 +34,8 @@ from src.tools.dummy_tools import (
 
 TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
     "website_positioning": [
+        ExaCompanyDomainSearchTool(),
+        ExaWebsitePositioningTool(),
         DummyWebSearchTool(),
         DummyWebpageScraperTool(),
         DummyHomepageTool(),
@@ -36,12 +44,16 @@ TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
         DummyLandingPageFinderTool(),
     ],
     "product_pages": [
+        ExaCompanyDomainSearchTool(),
+        ExaProductPagesTool(),
         DummyWebSearchTool(),
         DummyWebpageScraperTool(),
         DummyProductPageTool(),
         DummySitemapTool(),
     ],
     "pricing": [
+        ExaCompanyDomainSearchTool(),
+        ExaPricingResearchTool(),
         DummyWebSearchTool(),
         DummyWebpageScraperTool(),
         DummyPricingPageTool(),
@@ -63,6 +75,8 @@ TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
         DummyLinkedInApiTool(),
     ],
     "press_news": [
+        ExaCompanyDomainSearchTool(),
+        ExaPressNewsResearchTool(),
         DummyWebSearchTool(),
         DummyNewsSearchTool(),
         DummyPressReleaseTool(),

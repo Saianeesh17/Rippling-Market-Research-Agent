@@ -18,6 +18,10 @@ The social discovery category can call a real Apify actor for public LinkedIn co
 
 ```text
 EXA_API_KEY=...
+EXA_RESEARCH_MAX_RESULTS=5
+EXA_RESEARCH_CACHE_TTL_HOURS=24
+EXA_RESEARCH_CONTENT_MAX_AGE_HOURS=24
+EXA_PRESS_RECENCY_MONTHS=18
 APIFY_TOKEN=...
 APIFY_LINKEDIN_MAX_POSTS_PER_COMPANY=5
 AGENT_CACHE_DIR=.agent_cache
@@ -28,6 +32,27 @@ ADYNTEL_API_KEY=...
 ADYNTEL_BASE_URL=https://api.adyntel.com
 ADYNTEL_MAX_ADS_PER_PLATFORM=5
 ADYNTEL_AD_CACHE_TTL_HOURS=120
+```
+
+Exa is used in multiple places:
+
+- Website positioning, product pages, pricing, and press/news source agents search official competitor pages first, using the resolved company domain when available.
+- If official pages do not return usable evidence, those agents fall back to external public sources. External evidence is marked third-party and gets lower reliability/confidence.
+- Low-quality social domains are dropped for these page-research categories.
+- Press/news searches use Exa's `news` category for external results and default to the last 18 months.
+
+The page-research tools use capped page extraction:
+
+```json
+{
+  "type": "auto",
+  "num_results": 5,
+  "contents": {
+    "highlights": {"query": "{category-specific research question}", "maxCharacters": 2000},
+    "text": {"maxCharacters": 2600},
+    "maxAgeHours": 24
+  }
+}
 ```
 
 Before Apify runs, the social source agent calls Exa to resolve the competitor's LinkedIn company URL. That prevents the Apify tool from guessing based on the company name alone. The Exa LinkedIn search uses:
@@ -81,9 +106,11 @@ To reduce API spend, real API tools use a local JSON cache:
 
 - Exa LinkedIn URL resolution is cached indefinitely by competitor/domain. The tool only calls Exa on cache miss.
 - Exa company domain resolution is cached indefinitely by competitor/domain. Existing competitor profile domains are normalized and cached without an Exa call.
+- Exa page-research data is cached by tool/category/company/input. The default TTL is 24 hours.
 - Apify LinkedIn post data is cached by LinkedIn URL and actor input. The default TTL is 5 hours because company posts can change.
 - Adyntel ad data is cached by platform/domain/input. The default TTL is 120 hours, or 5 days, because ad libraries can change but do not need to be re-queried during quick iteration.
 - `AGENT_CACHE_DIR` controls the cache location. It defaults to `.agent_cache`, which is ignored by git.
+- `EXA_RESEARCH_CACHE_TTL_HOURS`, `EXA_RESEARCH_CONTENT_MAX_AGE_HOURS`, and `EXA_PRESS_RECENCY_MONTHS` control Exa page-research cost/freshness.
 - `APIFY_LINKEDIN_CACHE_TTL_HOURS` controls the Apify cache expiry.
 - `ADYNTEL_AD_CACHE_TTL_HOURS` controls the Adyntel cache expiry.
 

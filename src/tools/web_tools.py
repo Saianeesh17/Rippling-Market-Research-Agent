@@ -1,2 +1,2 @@
+from src.tools.exa_research_tools import ExaProductPagesTool, ExaWebsitePositioningTool
 from src.tools.dummy_tools import DummyWebSearchTool, DummyWebpageScraperTool
-
