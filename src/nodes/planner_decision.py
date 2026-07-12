@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from src.config import utc_now_iso
-from src.llm.base import BaseLLM
+from src.llm.base import BaseLLM, llm_token_usage_fields
 from src.schemas import LLMCallLog
 from src.schemas import PlannerDecision
 from src.state import AgentState
@@ -70,6 +70,7 @@ def _try_llm_decision(state: AgentState, llm: BaseLLM) -> PlannerDecision | None
                 provider=provider,
                 model=model,
                 success=True,
+                **llm_token_usage_fields(llm),
                 response_text=content.strip(),
                 timestamp=utc_now_iso(),
             )
@@ -82,6 +83,7 @@ def _try_llm_decision(state: AgentState, llm: BaseLLM) -> PlannerDecision | None
                 provider=provider,
                 model=model,
                 success=False,
+                **llm_token_usage_fields(llm),
                 response_text=content.strip() or None,
                 error=str(exc),
                 timestamp=utc_now_iso(),

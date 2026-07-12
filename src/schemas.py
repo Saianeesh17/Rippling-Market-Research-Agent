@@ -132,6 +132,9 @@ class LLMCallLog(BaseModel):
     provider: str
     model: str
     success: bool
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
     response_text: Optional[str] = None
     error: Optional[str] = None
     timestamp: str

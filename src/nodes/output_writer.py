@@ -8,7 +8,8 @@ from src.config import utc_now_iso
 from src.nodes.category_report_sections import _normalize_category_markdown
 from src.data.dummy_rippling_positioning import RIPPLING_CURRENT_POSITION
 from src.data.dummy_sources import slugify
-from src.llm.base import BaseLLM
+from src.llm.base import BaseLLM, llm_token_usage_fields
+from src.llm.token_usage import render_llm_token_usage_lines
 from src.schemas import LLMCallLog
 from src.schemas import FinalReport
 from src.state import AgentState
@@ -23,6 +24,7 @@ MAX_TOOL_FAILURES_FOR_FINAL_LLM = 20
 MAX_OUTPUT_JSON_REQUEST_FIELD_CHARS = 500
 DETAILED_CATEGORY_HEADING = "## Detailed Category Research"
 RIPPLING_MARKET_OPPORTUNITIES_HEADING = "## 7. Market Opportunities for Rippling"
+LLM_TOKEN_USAGE_HEADING = "## LLM Token Usage"
 CATEGORY_REPORT_SECTION_TITLES = {
     "website positioning",
     "product and use-case pages",
@@ -74,7 +76,7 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs", llm: Ba
 
     report = _build_report(state)
     markdown = _try_render_markdown_with_llm(state, report, llm) if llm else None
-    rendered_markdown = clean_template_placeholders(markdown or _render_markdown(state))
+    rendered_markdown = _ensure_llm_token_usage_section(clean_template_placeholders(markdown or _render_markdown(state)), state)
     markdown_path.write_text(rendered_markdown, encoding="utf-8")
     report.llm_call_logs = state.llm_call_logs
     report.report_question_logs = state.report_question_logs
@@ -170,6 +172,7 @@ def _try_render_markdown_with_llm(state: AgentState, report: FinalReport, llm: B
                 provider=provider,
                 model=model,
                 success=True,
+                **llm_token_usage_fields(llm),
                 response_text=markdown,
                 timestamp=utc_now_iso(),
             )
@@ -182,6 +185,7 @@ def _try_render_markdown_with_llm(state: AgentState, report: FinalReport, llm: B
                 provider=provider,
                 model=model,
                 success=False,
+                **llm_token_usage_fields(llm),
                 response_text=markdown or None,
                 error=str(exc),
                 timestamp=utc_now_iso(),
@@ -200,6 +204,31 @@ def _ensure_rippling_market_opportunities_section(markdown: str, state: AgentSta
         markdown = "\n".join(lines[:start_index] + lines[end_index:]).rstrip()
 
     return "\n".join([markdown.rstrip(), "", replacement, ""])
+
+
+def _ensure_llm_token_usage_section(markdown: str, state: AgentState) -> str:
+    bounds = _heading_section_bounds(markdown, _is_llm_token_usage_heading)
+    if bounds is not None:
+        start_index, end_index = bounds
+        lines = markdown.splitlines()
+        markdown = "\n".join(lines[:start_index] + lines[end_index:]).rstrip()
+
+    return "\n".join([markdown.rstrip(), "", _render_llm_token_usage_section(state), ""])
+
+
+def _render_llm_token_usage_section(state: AgentState) -> str:
+    return "\n".join(
+        [
+            LLM_TOKEN_USAGE_HEADING,
+            "",
+            *render_llm_token_usage_lines(state.llm_call_logs),
+        ]
+    )
+
+
+def _is_llm_token_usage_heading(line: str) -> bool:
+    stripped = line.strip().lower()
+    return stripped.startswith("## ") and "token" in stripped and ("llm" in stripped or "model" in stripped)
 
 
 def _render_rippling_market_opportunities_section(state: AgentState) -> str:
@@ -744,11 +773,18 @@ def _render_run_log(state: AgentState) -> str:
                 f"Model: {log.model}",
                 f"Timestamp: {log.timestamp}",
                 f"Status: {status}",
+                (
+                    "Token usage: "
+                    f"input={_token_value(log.input_tokens)}, "
+                    f"output={_token_value(log.output_tokens)}, "
+                    f"total={_token_value(log.total_tokens)}"
+                ),
                 "Response:",
                 log.response_text or "<empty>",
                 "",
             ]
         )
+    lines.extend(["LLM Token Usage Summary", "-----------------------", *render_llm_token_usage_lines(state.llm_call_logs)])
     lines.append("")
 
     lines.extend(["Category Report Sections", "------------------------"])
@@ -868,6 +904,10 @@ def _compact_text(text: str, *, limit: int) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _token_value(value: int | None) -> str:
+    return str(value) if value is not None else "not reported"
 
 
 def _json_block(value: object, *, indent: int) -> str:

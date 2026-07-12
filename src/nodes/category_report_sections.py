@@ -6,7 +6,7 @@ from collections import defaultdict
 from statistics import mean
 
 from src.config import SOURCE_CATEGORIES, utc_now_iso
-from src.llm.base import BaseLLM
+from src.llm.base import BaseLLM, llm_token_usage_fields
 from src.schemas import CategoryReportSection, LLMCallLog, ReportCitation, SourceAnalysis, SourceRecord
 from src.state import AgentState
 from src.text_cleanup import clean_source_title, clean_template_placeholders
@@ -110,6 +110,7 @@ def _try_llm_section(
                 provider=provider,
                 model=model,
                 success=True,
+                **llm_token_usage_fields(llm),
                 response_text=response,
                 timestamp=utc_now_iso(),
             )
@@ -122,6 +123,7 @@ def _try_llm_section(
                 provider=provider,
                 model=model,
                 success=False,
+                **llm_token_usage_fields(llm),
                 response_text=response or None,
                 error=str(exc),
                 timestamp=utc_now_iso(),

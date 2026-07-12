@@ -224,7 +224,7 @@ The CLI remains the default run path, but the repo also includes a simple Tkinte
 .\.venv\Scripts\python.exe -m src.gui
 ```
 
-The GUI lets you enter the target company, choose Auto / Use LLM / No LLM mode, run the same agent pipeline, read the generated markdown report in a styled report pane, inspect run details, and ask follow-up report questions when the run used an LLM. It writes the same `outputs/{competitor}_brief.md`, `outputs/{competitor}_data.json`, and `outputs/{competitor}_run.log` files as the CLI.
+The GUI lets you enter the target company, choose Auto / Use LLM / No LLM mode, run the same agent pipeline, read the generated markdown report in a styled report pane, inspect run details, and ask follow-up report questions when the run used an LLM. It also shows provider-reported LLM input/output token totals in the run details. It writes the same `outputs/{competitor}_brief.md`, `outputs/{competitor}_data.json`, and `outputs/{competitor}_run.log` files as the CLI.
 
 ## Optional LLM Mode
 
@@ -303,6 +303,8 @@ Current LLM-backed steps:
 - Post-report Q&A: when `--interactive` is used, the model routes each follow-up question to either answer directly from the generated report or run a follow-up Exa search if the report does not contain enough context.
 
 The final report writer sends a compact synthesis payload to avoid large-context/rate-limit failures. That compacting only affects the final LLM input, not `outputs/{competitor}_brief.md`. `outputs/{competitor}_data.json` also keeps API request/response fields summarized so it remains practical to inspect or reuse; raw API logs stay in `outputs/{competitor}_run.log`. After the LLM responds, the writer replaces any model-generated `Detailed Category Research` block with the full subagent-authored sections, including inline citations and `Sources` lists, so the markdown brief stays detailed even if the final LLM tries to summarize it.
+
+Generated markdown reports end with an `LLM Token Usage` section that totals provider-reported input and output tokens across logged LLM calls. Providers or test doubles that do not report usage are counted separately as calls without provider-reported usage.
 
 The CLI prints raw LLM responses for now to make debugging easier. The same responses are also written to the generated `outputs/{competitor}_run.log` file and included in `llm_call_logs` in the JSON output.
 

@@ -5,7 +5,7 @@ from typing import Optional
 
 from openai import BadRequestError, OpenAI
 
-from src.llm.base import BaseLLM
+from src.llm.base import BaseLLM, LLMTokenUsage
 
 
 @dataclass
@@ -40,6 +40,7 @@ class OpenAICompatibleLLM(BaseLLM):
         return self.settings.provider
 
     def complete(self, prompt: str, *, system_prompt: str | None = None, json_mode: bool = False) -> str:
+        self.clear_last_token_usage()
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -63,4 +64,28 @@ class OpenAICompatibleLLM(BaseLLM):
                 {"role": "user", "content": "Return valid JSON only. Do not wrap it in markdown."},
             ]
             completion = self.client.chat.completions.create(**request)
+        self.set_last_token_usage(_usage_from_completion(completion))
         return completion.choices[0].message.content or ""
+
+
+def _usage_from_completion(completion: object) -> LLMTokenUsage | None:
+    usage = getattr(completion, "usage", None)
+    if usage is None:
+        return None
+    input_tokens = getattr(usage, "prompt_tokens", None)
+    output_tokens = getattr(usage, "completion_tokens", None)
+    total_tokens = getattr(usage, "total_tokens", None)
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = int(input_tokens) + int(output_tokens)
+    return LLMTokenUsage(
+        input_tokens=_int_or_none(input_tokens),
+        output_tokens=_int_or_none(output_tokens),
+        total_tokens=_int_or_none(total_tokens),
+    )
+
+
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None

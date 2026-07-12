@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from src.llm.base import BaseLLM
+from src.llm.base import BaseLLM, LLMTokenUsage
 
 
 @dataclass
@@ -37,6 +37,7 @@ class AnthropicCompatibleLLM(BaseLLM):
         return self.settings.model
 
     def complete(self, prompt: str, *, system_prompt: str | None = None, json_mode: bool = False) -> str:
+        self.clear_last_token_usage()
         user_prompt = prompt
         if json_mode:
             user_prompt = f"{prompt}\n\nReturn valid JSON only. Do not wrap it in markdown."
@@ -78,6 +79,7 @@ class AnthropicCompatibleLLM(BaseLLM):
             raise RuntimeError(
                 f"Anthropic-compatible endpoint returned HTTP {exc.response.status_code}: {body}"
             ) from exc
+        self.set_last_token_usage(_usage_from_response(data))
         return self._extract_text(data)
 
     def _messages_url(self) -> str:
@@ -139,3 +141,26 @@ def _no_text_response_error(data: dict[str, Any]) -> str:
         "If this happens with Claude Sonnet 5, keep ANTHROPIC_THINKING=disabled or raise ANTHROPIC_MAX_TOKENS."
     )
     return " ".join(details)
+
+
+def _usage_from_response(data: dict[str, Any]) -> LLMTokenUsage | None:
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = _int_or_none(usage.get("input_tokens"))
+    output_tokens = _int_or_none(usage.get("output_tokens"))
+    total_tokens = _int_or_none(usage.get("total_tokens"))
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+    return LLMTokenUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None

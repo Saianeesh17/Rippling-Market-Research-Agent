@@ -14,6 +14,7 @@ from tkinter import font as tkfont
 from src.graph import run_graph
 from src.llm.base import BaseLLM
 from src.llm.service import create_llm
+from src.llm.token_usage import render_llm_token_usage_lines
 from src.nodes.output_writer import refresh_json_report, refresh_run_log
 from src.nodes.report_qa import answer_report_question
 from src.state import AgentState
@@ -132,6 +133,8 @@ def format_state_summary(state: AgentState) -> str:
             status = "ok" if log.success else f"failed: {log.error}"
             lines.append(f"- {log.stage} using {log.model}: {status}")
         lines.append("")
+
+    lines.extend(["LLM Token Usage", "---------------", *render_llm_token_usage_lines(state.llm_call_logs), ""])
 
     return "\n".join(lines).rstrip() + "\n"
 

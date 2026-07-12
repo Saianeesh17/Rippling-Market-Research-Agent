@@ -7,7 +7,7 @@ from typing import Any
 from src.config import utc_now_iso
 from src.data.dummy_rippling_positioning import RIPPLING_CURRENT_POSITION, RIPPLING_POSITIONING_PILLARS
 from src.data.dummy_sources import get_competitor_data
-from src.llm.base import BaseLLM
+from src.llm.base import BaseLLM, llm_token_usage_fields
 from src.schemas import LLMCallLog, RipplingOpportunity
 from src.state import AgentState
 
@@ -110,6 +110,7 @@ def _try_llm_rippling_opportunities(state: AgentState, llm: BaseLLM) -> list[Rip
                 provider=provider,
                 model=model,
                 success=True,
+                **llm_token_usage_fields(llm),
                 response_text=response,
                 timestamp=utc_now_iso(),
             )
@@ -122,6 +123,7 @@ def _try_llm_rippling_opportunities(state: AgentState, llm: BaseLLM) -> list[Rip
                 provider=provider,
                 model=model,
                 success=False,
+                **llm_token_usage_fields(llm),
                 response_text=response or None,
                 error=str(exc),
                 timestamp=utc_now_iso(),

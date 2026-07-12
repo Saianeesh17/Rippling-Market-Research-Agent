@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from src.config import utc_now_iso
-from src.llm.base import BaseLLM
+from src.llm.base import BaseLLM, llm_token_usage_fields
 from src.schemas import LLMCallLog, ReportQuestionLog, SourceRecord, ToolCallLog, ToolInput
 from src.state import AgentState
 from src.tools.exa_follow_up_tool import ExaFollowUpResearchTool
@@ -125,6 +125,7 @@ def _route_question(state: AgentState, question: str, report_context: str, llm: 
                 provider=provider,
                 model=model,
                 success=True,
+                **llm_token_usage_fields(llm),
                 response_text=response,
                 timestamp=utc_now_iso(),
             )
@@ -137,6 +138,7 @@ def _route_question(state: AgentState, question: str, report_context: str, llm: 
                 provider=provider,
                 model=model,
                 success=False,
+                **llm_token_usage_fields(llm),
                 response_text=response or None,
                 error=str(exc),
                 timestamp=utc_now_iso(),
@@ -175,6 +177,7 @@ def _answer_from_report(state: AgentState, question: str, report_context: str, l
                 provider=provider,
                 model=model,
                 success=True,
+                **llm_token_usage_fields(llm),
                 response_text=response,
                 timestamp=utc_now_iso(),
             )
@@ -187,6 +190,7 @@ def _answer_from_report(state: AgentState, question: str, report_context: str, l
                 provider=provider,
                 model=model,
                 success=False,
+                **llm_token_usage_fields(llm),
                 response_text=response or None,
                 error=str(exc),
                 timestamp=utc_now_iso(),
@@ -240,6 +244,7 @@ def _answer_from_follow_up_sources(
                 provider=provider,
                 model=model,
                 success=True,
+                **llm_token_usage_fields(llm),
                 response_text=response,
                 timestamp=utc_now_iso(),
             )
@@ -252,6 +257,7 @@ def _answer_from_follow_up_sources(
                 provider=provider,
                 model=model,
                 success=False,
+                **llm_token_usage_fields(llm),
                 response_text=response or None,
                 error=str(exc),
                 timestamp=utc_now_iso(),
