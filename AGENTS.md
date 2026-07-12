@@ -18,9 +18,11 @@ Run these from the repo root in PowerShell:
 .\.venv\Scripts\python.exe -m src.main --competitor "Gusto" --no-llm
 .\.venv\Scripts\python.exe -m src.main --competitor "Gusto" --use-llm
 .\.venv\Scripts\python.exe -m src.main --competitor "Gusto" --use-llm --interactive
+.\.venv\Scripts\python.exe -m src.gui
 ```
 
 Use `--no-llm` for deterministic offline checks. Use `--use-llm` only when `.env` has a configured provider and the needed source API keys.
+Use `src.gui` for the optional Tkinter desktop UI; it coexists with the CLI and writes the same markdown, JSON, and run-log outputs.
 
 ## Repo Map
 

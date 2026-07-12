@@ -216,6 +216,16 @@ pytest
 
 The `.venv/` directory is ignored by git.
 
+## Optional GUI Mode
+
+The CLI remains the default run path, but the repo also includes a simple Tkinter desktop UI:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.gui
+```
+
+The GUI lets you enter the target company, choose Auto / Use LLM / No LLM mode, run the same agent pipeline, read the generated markdown report in a styled report pane, inspect run details, and ask follow-up report questions when the run used an LLM. It writes the same `outputs/{competitor}_brief.md`, `outputs/{competitor}_data.json`, and `outputs/{competitor}_run.log` files as the CLI.
+
 ## Optional LLM Mode
 
 The repo includes `.env` and `.env.example`. Anthropic's first-party Claude API is the default provider:
