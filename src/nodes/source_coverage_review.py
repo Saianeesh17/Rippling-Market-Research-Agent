@@ -80,10 +80,9 @@ def _notes_for(category: str, status: str, third_party_count: int) -> str:
     if category == "pricing" and third_party_count:
         return "Pricing is caveated because at least one pricing source is third-party public evidence."
     if status == "missing":
-        return "No useful public dummy sources found."
+        return "No useful public sources found."
     if status == "partial":
         return "Coverage is usable but should be caveated."
     if status == "strong":
         return "Coverage has multiple public sources and official evidence."
     return "Coverage is useful but not deep."
-

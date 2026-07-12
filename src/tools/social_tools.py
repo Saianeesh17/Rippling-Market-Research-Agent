@@ -1,3 +1,4 @@
+from src.tools.apify_x_twitter_tool import ApifyXTwitterPostsSearchTool
 from src.tools.apify_linkedin_tool import ApifyLinkedInCompanyPostsTool
-from src.tools.exa_tools import ExaLinkedInCompanySearchTool
+from src.tools.exa_tools import ExaLinkedInCompanySearchTool, ExaTwitterHandleSearchTool
 from src.tools.dummy_tools import DummyLinkedInApiTool, DummyTwitterApiTool

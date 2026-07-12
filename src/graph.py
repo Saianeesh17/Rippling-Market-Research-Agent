@@ -33,6 +33,9 @@ def run_graph(
 ) -> AgentState:
     llm = llm or create_llm(use_llm)
     state = AgentState(user_input=competitor)
+    state.real_sources_only = llm is not None
+    if state.real_sources_only:
+        state.logs.append("Real-source mode enabled: dummy source tools are disabled for this run.")
     state = resolve_competitor(state)
     state = create_research_plan(state)
     state = run_source_discovery(state)

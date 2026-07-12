@@ -5,13 +5,14 @@ from typing import Dict, List
 from src.tools.base import BaseSourceTool
 from src.tools.adyntel_ads_tool import AdyntelGoogleAdsTool, AdyntelLinkedInAdsTool, AdyntelMetaAdsTool
 from src.tools.apify_linkedin_tool import ApifyLinkedInCompanyPostsTool
+from src.tools.apify_x_twitter_tool import ApifyXTwitterPostsSearchTool
 from src.tools.exa_research_tools import (
     ExaPressNewsResearchTool,
     ExaPricingResearchTool,
     ExaProductPagesTool,
     ExaWebsitePositioningTool,
 )
-from src.tools.exa_tools import ExaCompanyDomainSearchTool, ExaLinkedInCompanySearchTool
+from src.tools.exa_tools import ExaCompanyDomainSearchTool, ExaLinkedInCompanySearchTool, ExaTwitterHandleSearchTool
 from src.tools.dummy_tools import (
     DummyComparisonPageTool,
     DummyGoogleAdsTransparencyTool,
@@ -71,6 +72,8 @@ TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
     "social": [
         ExaLinkedInCompanySearchTool(),
         ApifyLinkedInCompanyPostsTool(),
+        ExaTwitterHandleSearchTool(),
+        ApifyXTwitterPostsSearchTool(),
         DummyTwitterApiTool(),
         DummyLinkedInApiTool(),
     ],
@@ -89,5 +92,8 @@ TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
 }
 
 
-def get_tools_for_category(category: str) -> List[BaseSourceTool]:
-    return TOOL_REGISTRY.get(category, [])
+def get_tools_for_category(category: str, *, real_only: bool = False) -> List[BaseSourceTool]:
+    tools = TOOL_REGISTRY.get(category, [])
+    if real_only:
+        return [tool for tool in tools if not getattr(tool, "is_dummy_tool", False)]
+    return tools

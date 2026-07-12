@@ -22,6 +22,19 @@ def test_registry_only_gives_allowed_tools_to_category_agents():
         assert all(category in tool.allowed_agents for tool in tools)
 
 
+def test_real_only_registry_excludes_dummy_tools():
+    tools = get_tools_for_category("social", real_only=True)
+
+    assert tools
+    assert all(not getattr(tool, "is_dummy_tool", False) for tool in tools)
+    assert {tool.name for tool in tools} >= {
+        "ExaLinkedInCompanySearchTool",
+        "ApifyLinkedInCompanyPostsTool",
+        "ExaTwitterHandleSearchTool",
+        "ApifyXTwitterPostsSearchTool",
+    }
+
+
 def test_coverage_review_groups_sources_by_category():
     state = AgentState(user_input="Gusto")
     state = resolve_competitor(state)
@@ -157,6 +170,69 @@ def test_exa_resolved_linkedin_url_is_available_to_later_social_tools(monkeypatc
     state = run_source_discovery(state, category="social")
 
     assert LinkedinConsumerTool.received_url == "https://www.linkedin.com/company/gustohq/posts/?feedView=all"
+
+
+class TwitterResolverTool(BaseSourceTool):
+    name = "TwitterResolverTool"
+    description = "Resolves Twitter/X handle for handoff test."
+    source_category = "social"
+    reliability_weight = 0.7
+    allowed_agents = ["social"]
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            metadata={"twitter_handle": "@GustoHQ"},
+        )
+
+
+class TwitterConsumerTool(BaseSourceTool):
+    name = "TwitterConsumerTool"
+    description = "Consumes Twitter/X handle for handoff test."
+    source_category = "social"
+    reliability_weight = 0.7
+    allowed_agents = ["social"]
+    required_context_fields = ["twitter_handle"]
+    received_handle = None
+
+    def run(self, tool_input: ToolInput) -> ToolResult:
+        TwitterConsumerTool.received_handle = tool_input.twitter_handle
+        return ToolResult(tool_name=self.name, success=True)
+
+
+def test_exa_resolved_twitter_handle_is_available_to_later_social_tools(monkeypatch):
+    TwitterConsumerTool.received_handle = None
+    monkeypatch.setitem(TOOL_REGISTRY, "social", [TwitterResolverTool(), TwitterConsumerTool()])
+    state = AgentState(user_input="Gusto")
+    state = resolve_competitor(state)
+    state = create_research_plan(state)
+    state = run_source_discovery(state, category="social")
+
+    assert TwitterConsumerTool.received_handle == "@GustoHQ"
+
+
+def test_required_context_tools_are_skipped_without_context(monkeypatch):
+    TwitterConsumerTool.received_handle = None
+    monkeypatch.setitem(TOOL_REGISTRY, "social", [TwitterConsumerTool()])
+    state = AgentState(user_input="Gusto")
+    state = resolve_competitor(state)
+    state = create_research_plan(state)
+    state = run_source_discovery(state, category="social")
+
+    assert TwitterConsumerTool.received_handle is None
+    assert state.tool_call_logs[0].tool_name == "TwitterConsumerTool"
+    assert "required context" in (state.tool_call_logs[0].error or "")
+
+
+def test_real_source_mode_does_not_run_dummy_tools():
+    state = AgentState(user_input="Gusto", real_sources_only=True)
+    state = resolve_competitor(state)
+    state = create_research_plan(state)
+    state = run_source_discovery(state, category="social")
+
+    assert state.tool_call_logs
+    assert all(not log.tool_name.startswith("Dummy") for log in state.tool_call_logs)
 
 
 class DomainResolverTool(BaseSourceTool):

@@ -54,6 +54,25 @@ class ToolUsingSourceDiscoveryAgent:
                 state.tool_call_logs.append(log)
                 continue
 
+            missing_context = [
+                field
+                for field in getattr(tool, "required_context_fields", [])
+                if not tool_context.get(str(field))
+            ]
+            if missing_context:
+                state.tool_call_logs.append(
+                    ToolCallLog(
+                        tool_name=tool.name,
+                        category=self.category,
+                        query=query,
+                        success=False,
+                        sources_returned=0,
+                        error=f"Skipped because required context was not resolved: {', '.join(missing_context)}.",
+                        timestamp=utc_now_iso(),
+                    )
+                )
+                continue
+
             try:
                 result = tool.run(
                     ToolInput(
@@ -62,12 +81,15 @@ class ToolUsingSourceDiscoveryAgent:
                         query=query,
                         category=self.category,
                         linkedin_company_url=tool_context.get("linkedin_company_url"),
+                        twitter_handle=tool_context.get("twitter_handle"),
                         resolved_company_domain=tool_context.get("resolved_company_domain"),
                         allow_third_party=self.category in {"pricing", "press_news", "comparison_pages"},
                     )
                 )
                 if result.metadata.get("linkedin_company_url"):
                     tool_context["linkedin_company_url"] = str(result.metadata["linkedin_company_url"])
+                if result.metadata.get("twitter_handle"):
+                    tool_context["twitter_handle"] = str(result.metadata["twitter_handle"])
                 if result.metadata.get("resolved_company_domain"):
                     tool_context["resolved_company_domain"] = str(result.metadata["resolved_company_domain"])
                 category_sources = [
@@ -144,7 +166,7 @@ def run_source_discovery(
 
     categories = [category] if category else [task.category for task in state.research_plan.tasks]
     for task_category in categories:
-        tools = get_tools_for_category(task_category)
+        tools = get_tools_for_category(task_category, real_only=state.real_sources_only)
         agent = ToolUsingSourceDiscoveryAgent(task_category, tools)
         found = agent.discover(state, specific_tool_name=specific_tool_name)
         state.discovered_sources.extend(dedupe_sources(state.discovered_sources, found))

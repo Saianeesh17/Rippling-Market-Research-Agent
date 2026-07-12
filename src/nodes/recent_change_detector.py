@@ -8,6 +8,8 @@ from src.state import AgentState
 def detect_recent_changes(state: AgentState) -> AgentState:
     if not state.competitor:
         return state
+    if state.real_sources_only:
+        return _detect_real_source_recent_changes(state)
     recent_source_ids = [
         source.source_id
         for source in state.discovered_sources
@@ -28,3 +30,21 @@ def detect_recent_changes(state: AgentState) -> AgentState:
     state.logs.append("Detected recent public messaging changes.")
     return state
 
+
+def _detect_real_source_recent_changes(state: AgentState) -> AgentState:
+    recent_sources = [
+        source
+        for source in state.discovered_sources
+        if source.published_at and source.source_type in {"press_news", "paid_ads", "social"}
+    ][:4]
+    state.recent_changes = [
+        RecentChange(
+            change=f"Recent public source: {source.title}",
+            evidence_source_ids=[source.source_id],
+            interpretation="This is treated as a public messaging signal, not an internal roadmap claim.",
+            confidence=round(source.reliability_weight * source.confidence_modifier, 2),
+        )
+        for source in recent_sources
+    ]
+    state.logs.append("Detected recent public messaging changes from real sources.")
+    return state

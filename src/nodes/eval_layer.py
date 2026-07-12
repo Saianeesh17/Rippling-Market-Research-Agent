@@ -39,7 +39,7 @@ def evaluate_output(state: AgentState) -> AgentState:
         public_source_compliance=public_source_compliance,
         weak_sections=weak_sections,
         overall_quality_score=overall,
-        explanation="Dummy evaluation checks grounding, bounded sources, caveats, and recommendation specificity.",
+        explanation="Evaluation checks grounding, bounded sources, caveats, and recommendation specificity.",
     )
     state.logs.append(f"Eval complete: overall quality score {overall}.")
     return state
@@ -74,4 +74,3 @@ def _third_party_caveat_score(state: AgentState) -> float:
         for claim in state.extracted_claims
     )
     return 0.9 if caveated else 0.35
-

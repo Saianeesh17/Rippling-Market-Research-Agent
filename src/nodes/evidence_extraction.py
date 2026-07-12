@@ -11,6 +11,8 @@ from src.state import AgentState
 def extract_evidence_claims(state: AgentState) -> AgentState:
     if not state.competitor:
         return state
+    if state.real_sources_only:
+        return _extract_real_source_claims(state)
     data = get_competitor_data(state.competitor.name)
     sources_by_id = {source.source_id: source for source in state.discovered_sources}
     analyses_by_theme = {}
@@ -57,3 +59,69 @@ def extract_evidence_claims(state: AgentState) -> AgentState:
     state.logs.append(f"Extracted {len(claims)} grounded claims.")
     return state
 
+
+def _extract_real_source_claims(state: AgentState) -> AgentState:
+    assert state.competitor is not None
+    sources_by_id = {source.source_id: source for source in state.discovered_sources}
+    analyses_by_theme = {}
+    for analysis in state.source_analyses:
+        for theme in analysis.themes:
+            analyses_by_theme.setdefault(theme, []).append(analysis)
+
+    claims = []
+    for index, (theme, analyses) in enumerate(analyses_by_theme.items(), start=1):
+        if not theme or not analyses:
+            continue
+        source_ids = sorted({analysis.source_id for analysis in analyses})
+        source_types = sorted({sources_by_id[source_id].source_type for source_id in source_ids if source_id in sources_by_id})
+        evidence = []
+        confidences = []
+        for analysis in analyses[:4]:
+            evidence.extend(analysis.observations[:1])
+            confidences.append(analysis.confidence)
+        first_evidence = evidence[0] if evidence else theme
+        source_diversity_bonus = min(0.1, 0.03 * len(source_types))
+        confidence = round(min(0.98, mean(confidences) + source_diversity_bonus), 2) if confidences else 0.4
+        if theme == "pricing packaging caveat" and any(
+            sources_by_id[source_id].is_third_party for source_id in source_ids if source_id in sources_by_id
+        ):
+            confidence = min(confidence, 0.68)
+        claims.append(
+            ExtractedClaim(
+                claim_id=f"claim_{index:03d}",
+                claim=f"{_theme_label(theme)}: {_clean_evidence_snippet(first_evidence)}",
+                theme=theme,
+                source_ids=source_ids,
+                evidence_snippets=evidence[:3],
+                source_types=source_types,
+                persona=None,
+                funnel_stage="awareness",
+                confidence=confidence,
+                timestamp=utc_now_iso(),
+            )
+        )
+    state.extracted_claims = claims
+    state.logs.append(f"Extracted {len(claims)} grounded real-source claims.")
+    return state
+
+
+def _theme_label(theme: str) -> str:
+    labels = {
+        "website positioning": "Website positioning",
+        "product and use cases": "Product and use cases",
+        "pricing packaging caveat": "Pricing and packaging",
+        "paid ads messaging": "Paid ads messaging",
+        "social messaging": "Social messaging",
+        "recent launches and announcements": "Recent launches and announcements",
+        "comparison positioning": "Comparison positioning",
+    }
+    return labels.get(theme, theme.replace("_", " ").title())
+
+
+def _clean_evidence_snippet(text: str) -> str:
+    cleaned = text.strip()
+    for prefix in ["Highlights:", "Page text excerpt:", "Summary:", "Body:", "Post:"]:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+    cleaned = " ".join(cleaned.split())
+    return cleaned[:260].rstrip()

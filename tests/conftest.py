@@ -16,6 +16,8 @@ def disable_live_llm_for_tests(monkeypatch, tmp_path):
     monkeypatch.setenv("APIFY_TOKEN", "")
     monkeypatch.setenv("APIFY_LINKEDIN_MAX_POSTS_PER_COMPANY", "5")
     monkeypatch.setenv("APIFY_LINKEDIN_CACHE_TTL_HOURS", "5")
+    monkeypatch.setenv("APIFY_X_TWITTER_MAX_POSTS", "5")
+    monkeypatch.setenv("APIFY_X_TWITTER_CACHE_TTL_HOURS", "5")
     monkeypatch.setenv("EXA_API_KEY", "")
     monkeypatch.setenv("EXA_RESEARCH_MAX_RESULTS", "5")
     monkeypatch.setenv("EXA_RESEARCH_CACHE_TTL_HOURS", "24")

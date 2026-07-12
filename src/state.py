@@ -49,3 +49,4 @@ class AgentState(BaseModel):
     final_log_path: Optional[str] = None
     logs: List[str] = Field(default_factory=list)
     replanning_cycles: int = 0
+    real_sources_only: bool = False

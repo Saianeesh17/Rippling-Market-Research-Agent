@@ -7,7 +7,7 @@ from src.llm.base import BaseLLM
 from src.schemas import LLMCallLog
 from src.schemas import PlannerDecision
 from src.state import AgentState
-from src.tools.registry import TOOL_REGISTRY
+from src.tools.registry import TOOL_REGISTRY, get_tools_for_category
 
 
 def decide_next_step(state: AgentState, llm: BaseLLM | None = None) -> AgentState:
@@ -22,7 +22,7 @@ def decide_next_step(state: AgentState, llm: BaseLLM | None = None) -> AgentStat
 
 def _deterministic_decision(state: AgentState) -> AgentState:
     max_cycles = state.research_plan.max_replanning_cycles if state.research_plan else 0
-    missing_or_high = [gap for gap in state.coverage_gaps if gap.severity == "high"]
+    missing_or_high = [gap for gap in state.coverage_gaps if gap.severity == "high" and gap.suggested_next_tool]
     if missing_or_high and state.replanning_cycles < max_cycles:
         gap = missing_or_high[0]
         state.planner_decision = PlannerDecision(
@@ -62,7 +62,7 @@ def _try_llm_decision(state: AgentState, llm: BaseLLM) -> PlannerDecision | None
         )
         payload = _json_from_text(content)
         decision = PlannerDecision.model_validate(payload)
-        if not _decision_is_allowed(decision):
+        if not _decision_is_allowed(decision, state):
             raise ValueError("LLM returned a tool or category outside the allowed registry.")
         state.llm_call_logs.append(
             LLMCallLog(
@@ -100,9 +100,9 @@ def _planner_prompt(state: AgentState) -> str:
                 "allowed_agents": tool.allowed_agents,
                 "reliability_weight": tool.reliability_weight,
             }
-            for tool in tools
+            for tool in get_tools_for_category(category, real_only=state.real_sources_only)
         ]
-        for category, tools in TOOL_REGISTRY.items()
+        for category in TOOL_REGISTRY
     }
     return json.dumps(
         {
@@ -126,12 +126,12 @@ def _planner_prompt(state: AgentState) -> str:
     )
 
 
-def _decision_is_allowed(decision: PlannerDecision) -> bool:
+def _decision_is_allowed(decision: PlannerDecision, state: AgentState) -> bool:
     if decision.action != "search_deeper":
         return True
     if not decision.next_category or not decision.next_tool:
         return False
-    allowed_tools = TOOL_REGISTRY.get(decision.next_category, [])
+    allowed_tools = get_tools_for_category(decision.next_category, real_only=state.real_sources_only)
     return any(tool.name == decision.next_tool and decision.next_category in tool.allowed_agents for tool in allowed_tools)
 
 

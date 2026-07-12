@@ -1,6 +1,6 @@
 # Competitive Intel Agent
 
-Local prototype of a conversational competitive marketing intelligence agent for a GTM Engineer take-home assessment. It uses deterministic dummy tools and dummy public-source-style content so the full pipeline can be tested without scraping, API keys, paid data, or real web access.
+Local prototype of a conversational competitive marketing intelligence agent for a GTM Engineer take-home assessment. Deterministic no-LLM runs can still use dummy fallback tools for offline testing; real LLM runs use only real source tools.
 
 ## What It Does
 
@@ -10,11 +10,11 @@ Given a competitor name or domain, the agent generates:
 - A structured JSON report with sources, extracted claims, confidence scores, timestamps, tool call logs, coverage gaps, recommendations, and eval scores.
 - A run log in `outputs/` with pipeline logs, tool calls, planner decision, eval summary, and any raw LLM responses.
 
-The prototype includes dummy source content for Gusto, Deel, BambooHR, and a lower-confidence generic fallback.
+The prototype includes deterministic fallback content for Gusto, Deel, BambooHR, and a lower-confidence generic fallback when running without the LLM.
 
 ## Real API Tools
 
-The social discovery category can call a real Apify actor for public LinkedIn company posts, and the paid ads category can call Adyntel for public Meta, LinkedIn, and Google ad library results:
+The social discovery category can call real Apify actors for public LinkedIn company posts and Twitter/X posts, and the paid ads category can call Adyntel for public Meta, LinkedIn, and Google ad library results:
 
 ```text
 EXA_API_KEY=...
@@ -24,6 +24,8 @@ EXA_RESEARCH_CONTENT_MAX_AGE_HOURS=24
 EXA_PRESS_RECENCY_MONTHS=18
 APIFY_TOKEN=...
 APIFY_LINKEDIN_MAX_POSTS_PER_COMPANY=5
+APIFY_X_TWITTER_MAX_POSTS=5
+APIFY_X_TWITTER_CACHE_TTL_HOURS=5
 AGENT_CACHE_DIR=.agent_cache
 APIFY_LINKEDIN_CACHE_TTL_HOURS=5
 
@@ -75,7 +77,27 @@ The actor endpoint is:
 https://api.apify.com/v2/acts/automation-lab~linkedin-company-posts-scraper/run-sync-get-dataset-items
 ```
 
-For now the tool always sends `maxPostsPerCompany=5` and `maxCompanies=1` so test runs stay small. If `APIFY_TOKEN` is missing or the actor fails, the pipeline logs the failed tool call and continues with dummy social tools.
+For now the LinkedIn tool always sends `maxPostsPerCompany=5` and `maxCompanies=1` so test runs stay small.
+
+Before the Twitter/X Apify actor runs, the social source agent calls Exa to resolve a proper official handle such as `@GustoHQ`. If Exa cannot resolve a valid profile handle, the X posts actor is skipped before any API call. The Exa handle search uses:
+
+```json
+{
+  "query": "{competitor} official Twitter X account",
+  "type": "auto",
+  "num_results": 5,
+  "include_domains": ["x.com", "twitter.com"],
+  "contents": {"highlights": true}
+}
+```
+
+The resolved handle is passed into the Apify actor as `startUrls[0]`. The actor endpoint is:
+
+```text
+https://api.apify.com/v2/acts/simpleapi~x-twitter-posts-search/run-sync-get-dataset-items
+```
+
+The X posts tool sends Apify proxy settings with the `RESIDENTIAL` proxy group and returns at most 5 posts for testing.
 
 Before Adyntel runs, the paid ads source agent resolves the competitor's website domain. If the competitor profile already has a domain, it normalizes that value to bare `company.com` format and skips Exa. If the profile has no domain, it calls Exa with:
 
@@ -96,22 +118,27 @@ POST https://api.adyntel.com/linkedin
 POST https://api.adyntel.com/google
 ```
 
-For now each Adyntel platform adapter logs and returns at most 5 ads. If `ADYNTEL_EMAIL` or `ADYNTEL_API_KEY` is missing, the pipeline logs the failed tool call and continues with dummy paid-ad tools.
+For now each Adyntel platform adapter logs and returns at most 5 ads.
 
-Successful API tool calls attach redacted request details and raw API output to `tool_call_logs` in the JSON report. The same API request/output blocks are written into `outputs/{competitor}_run.log`.
+When an LLM is active, source discovery runs in real-source mode and excludes all dummy tools. Missing API keys or failed real tools are logged as gaps instead of being backfilled with dummy sources. No-LLM deterministic runs still keep dummy fallbacks for offline testing.
+
+Successful API tool calls attach redacted request details and compact API summaries to `tool_call_logs` in the JSON report. The full API request/output blocks are written into `outputs/{competitor}_run.log` for debugging.
 
 ### API Cache
 
 To reduce API spend, real API tools use a local JSON cache:
 
 - Exa LinkedIn URL resolution is cached indefinitely by competitor/domain. The tool only calls Exa on cache miss.
+- Exa Twitter/X handle resolution is cached indefinitely by competitor/domain. The X posts actor only runs after this cache or resolver provides a valid handle.
 - Exa company domain resolution is cached indefinitely by competitor/domain. Existing competitor profile domains are normalized and cached without an Exa call.
 - Exa page-research data is cached by tool/category/company/input. The default TTL is 24 hours.
 - Apify LinkedIn post data is cached by LinkedIn URL and actor input. The default TTL is 5 hours because company posts can change.
+- Apify Twitter/X post data is cached by resolved handle and actor input. The default TTL is 5 hours because company posts can change.
 - Adyntel ad data is cached by platform/domain/input. The default TTL is 120 hours, or 5 days, because ad libraries can change but do not need to be re-queried during quick iteration.
 - `AGENT_CACHE_DIR` controls the cache location. It defaults to `.agent_cache`, which is ignored by git.
 - `EXA_RESEARCH_CACHE_TTL_HOURS`, `EXA_RESEARCH_CONTENT_MAX_AGE_HOURS`, and `EXA_PRESS_RECENCY_MONTHS` control Exa page-research cost/freshness.
 - `APIFY_LINKEDIN_CACHE_TTL_HOURS` controls the Apify cache expiry.
+- `APIFY_X_TWITTER_CACHE_TTL_HOURS` controls the Apify X/Twitter cache expiry.
 - `ADYNTEL_AD_CACHE_TTL_HOURS` controls the Adyntel cache expiry.
 
 Cache hits are still logged in `tool_call_logs` with `api_request.cache_hit=true` and `api_response.cache_hit=true`.
@@ -245,11 +272,13 @@ python -m src.main --competitor "Gusto" --no-llm
 Current LLM-backed steps:
 
 - Planner decision: the model receives source coverage, gaps, replanning limits, and the bounded tool registry, then returns a validated `PlannerDecision`.
-- Final markdown report: the model receives the structured dummy report data and writes the final markdown brief.
+- Final markdown report: the model receives the structured report data and writes the final markdown brief.
+
+The final report writer sends a compact synthesis payload to avoid large-context/rate-limit failures. That compacting only affects the final LLM input, not `outputs/{competitor}_brief.md`. `outputs/{competitor}_data.json` also keeps API request/response fields summarized so it remains practical to inspect or reuse; raw API logs stay in `outputs/{competitor}_run.log`. After the LLM responds, the writer replaces any model-generated `Detailed Category Research` block with the full subagent-authored sections, including inline citations and `Sources` lists, so the markdown brief stays detailed even if the final LLM tries to summarize it.
 
 The CLI prints raw LLM responses for now to make debugging easier. The same responses are also written to the generated `outputs/{competitor}_run.log` file and included in `llm_call_logs` in the JSON output.
 
-The discovery tools and source data are still dummy data. The LLM does not scrape, browse, or call tools directly.
+The LLM does not scrape, browse, or call tools directly. Source discovery is performed by the bounded tool registry before the report-writing prompts run.
 
 ## CLI Examples
 

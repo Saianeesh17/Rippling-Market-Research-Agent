@@ -12,6 +12,7 @@ class DummySourceTool(BaseSourceTool):
     source_category = "generic"
     reliability_weight = 0.6
     allowed_agents: List[str] = []
+    is_dummy_tool = True
 
     def _result(self, tool_input: ToolInput, sources: List[SourceRecord]) -> ToolResult:
         return ToolResult(tool_name=self.name, success=True, sources=sources)
@@ -388,4 +389,3 @@ class DummyComparisonPageTool(DummySourceTool):
             is_official=True,
         )
         return self._result(tool_input, [source])
-
