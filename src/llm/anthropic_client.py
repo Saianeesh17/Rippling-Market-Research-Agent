@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -13,10 +14,12 @@ class AnthropicSettings:
     base_url: str
     verify_ssl: bool
     model: str = "claude-sonnet-5"
-    max_tokens: int = 2000
+    max_tokens: int = 8000
     anthropic_version: str = "2023-06-01"
     provider: str = "anthropic"
     use_authorization_header: bool = False
+    thinking_mode: str = "disabled"
+    effort: str | None = None
 
 
 class AnthropicCompatibleLLM(BaseLLM):
@@ -43,6 +46,11 @@ class AnthropicCompatibleLLM(BaseLLM):
             "max_tokens": self.settings.max_tokens,
             "messages": [{"role": "user", "content": user_prompt}],
         }
+        thinking = self._thinking_config()
+        if thinking:
+            payload["thinking"] = thinking
+        if self.settings.effort and self.settings.thinking_mode == "adaptive":
+            payload["output_config"] = {"effort": self.settings.effort}
         if system_prompt:
             payload["system"] = system_prompt
 
@@ -87,7 +95,17 @@ class AnthropicCompatibleLLM(BaseLLM):
             return token.split(" ", 1)[1].strip()
         return token
 
-    def _extract_text(self, data: dict) -> str:
+    def _thinking_config(self) -> dict[str, str] | None:
+        mode = self.settings.thinking_mode.strip().lower()
+        if mode in {"", "auto", "omit", "none"}:
+            return None
+        if mode in {"disabled", "off", "false", "0"}:
+            return {"type": "disabled"}
+        if mode in {"adaptive", "on", "true", "1"}:
+            return {"type": "adaptive"}
+        return {"type": mode}
+
+    def _extract_text(self, data: dict[str, Any]) -> str:
         content = data.get("content", [])
         text_parts = []
         for block in content:
@@ -97,4 +115,26 @@ class AnthropicCompatibleLLM(BaseLLM):
             return "".join(text_parts)
         if isinstance(data.get("completion"), str):
             return data["completion"]
-        return str(data)
+        raise RuntimeError(_no_text_response_error(data))
+
+
+def _no_text_response_error(data: dict[str, Any]) -> str:
+    content = data.get("content", [])
+    block_types = []
+    if isinstance(content, list):
+        block_types = [str(block.get("type")) for block in content if isinstance(block, dict)]
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    output_details = usage.get("output_tokens_details") if isinstance(usage.get("output_tokens_details"), dict) else {}
+    details = [
+        "Anthropic response did not include a text block.",
+        f"stop_reason={data.get('stop_reason') or 'unknown'}",
+        f"content_block_types={block_types or 'none'}",
+    ]
+    if usage:
+        details.append(f"output_tokens={usage.get('output_tokens', 'unknown')}")
+    if output_details:
+        details.append(f"thinking_tokens={output_details.get('thinking_tokens', 'unknown')}")
+    details.append(
+        "If this happens with Claude Sonnet 5, keep ANTHROPIC_THINKING=disabled or raise ANTHROPIC_MAX_TOKENS."
+    )
+    return " ".join(details)

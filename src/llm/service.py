@@ -15,6 +15,8 @@ GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_QGENIE_BASE_URL = "https://qgenie-api.qualcomm.com/"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-5"
+ANTHROPIC_DEFAULT_MAX_TOKENS = 8000
+ANTHROPIC_DEFAULT_THINKING = "disabled"
 
 
 def create_llm(use_llm: Optional[bool] = None) -> BaseLLM | None:
@@ -138,9 +140,11 @@ def _anthropic_settings(
         base_url=base_url,
         verify_ssl=_env_bool("ANTHROPIC_VERIFY_SSL", default=True),
         model=os.getenv("ANTHROPIC_MODEL", "").strip() or ANTHROPIC_DEFAULT_MODEL,
-        max_tokens=_env_int("ANTHROPIC_MAX_TOKENS", default=2000),
+        max_tokens=_env_int("ANTHROPIC_MAX_TOKENS", default=ANTHROPIC_DEFAULT_MAX_TOKENS),
         provider=provider,
         use_authorization_header=use_qgenie and not has_api_key,
+        thinking_mode=os.getenv("ANTHROPIC_THINKING", "").strip() or ANTHROPIC_DEFAULT_THINKING,
+        effort=os.getenv("ANTHROPIC_EFFORT", "").strip() or None,
     )
 
 

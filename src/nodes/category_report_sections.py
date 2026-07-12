@@ -9,6 +9,7 @@ from src.config import SOURCE_CATEGORIES, utc_now_iso
 from src.llm.base import BaseLLM
 from src.schemas import CategoryReportSection, LLMCallLog, ReportCitation, SourceAnalysis, SourceRecord
 from src.state import AgentState
+from src.text_cleanup import clean_source_title, clean_template_placeholders
 
 
 CATEGORY_TITLES = {
@@ -61,6 +62,8 @@ def _try_llm_section(
                     "Write this research category's report section only. Use only the provided sources and analyses. "
                     "Use numeric inline citations like [1] and [2], not markdown links in the prose. "
                     "End the section with a Sources list mapping each number to source title and URL. "
+                    "Put the section heading on its own line, use blank lines between paragraphs, "
+                    "and never return the whole section as one single paragraph. "
                     "Do not write final strategic recommendations."
                 ),
                 "category": category,
@@ -69,9 +72,9 @@ def _try_llm_section(
                     {
                         "citation_number": index,
                         "source_id": source.source_id,
-                        "title": source.title,
+                        "title": clean_source_title(source.title),
                         "url": source.url,
-                        "content": source.content[:1800],
+                        "content": clean_template_placeholders(source.content[:1800]),
                         "is_official": source.is_official,
                         "is_third_party": source.is_third_party,
                         "published_at": source.published_at,
@@ -92,7 +95,15 @@ def _try_llm_section(
         ).strip()
         if not response:
             raise ValueError("LLM returned an empty category report section.")
+        response = _normalize_category_markdown(
+            response,
+            CATEGORY_TITLES.get(category, category.replace("_", " ").title()),
+        )
         response = _ensure_numbered_sources(response, sources)
+        response = _normalize_category_markdown(
+            response,
+            CATEGORY_TITLES.get(category, category.replace("_", " ").title()),
+        )
         state.llm_call_logs.append(
             LLMCallLog(
                 stage=f"category_report_{category}",
@@ -154,7 +165,7 @@ def _section(
         markdown=markdown,
         source_ids=[source.source_id for source in sources],
         citations=[
-            ReportCitation(source_id=source.source_id, title=source.title, url=source.url)
+            ReportCitation(source_id=source.source_id, title=clean_source_title(source.title), url=source.url)
             for source in sources
         ],
         generated_by=generated_by,
@@ -164,13 +175,68 @@ def _section(
 
 def _ensure_numbered_sources(markdown: str, sources: list[SourceRecord]) -> str:
     rewritten = _rewrite_markdown_links_to_numbers(markdown, sources)
-    if "\nSources" in rewritten or "\n**Sources**" in rewritten:
+    if re.search(r"(?m)^\s*(?:#+\s*)?(?:\*\*)?Sources(?:\*\*)?:?\s*$", rewritten):
         return rewritten
     cited_numbers = _cited_numbers(rewritten)
     cited_sources = [source for index, source in enumerate(sources, start=1) if index in cited_numbers]
     if not cited_sources:
         cited_sources = sources[:5]
     return "\n".join([rewritten.rstrip(), *_numbered_sources_lines(cited_sources)])
+
+
+def _normalize_category_markdown(markdown: str, title: str) -> str:
+    normalized = clean_template_placeholders(markdown).replace("\r\n", "\n").replace("\r", "\n").strip()
+    normalized = _normalize_opening_heading(normalized, title)
+    normalized = _normalize_sources_block(normalized)
+    normalized = _remove_duplicate_sources_blocks(normalized)
+    normalized = _break_inline_subheads(normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
+
+
+def _normalize_opening_heading(markdown: str, title: str) -> str:
+    lines = markdown.splitlines()
+    if not lines:
+        return markdown
+
+    first = lines[0].strip()
+    title_pattern = re.escape(title)
+    match = re.match(rf"^(?P<hashes>#{{1,3}}\s+)?(?P<title>{title_pattern})(?P<rest>\s+\S.*)?$", first, flags=re.IGNORECASE)
+    if not match:
+        return markdown
+
+    heading = f"## {title}"
+    rest = (match.group("rest") or "").strip()
+    remaining = lines[1:]
+    if rest:
+        return "\n".join([heading, "", rest, *remaining]).strip()
+    return "\n".join([heading, *remaining]).strip()
+
+
+def _normalize_sources_block(markdown: str) -> str:
+    match = re.search(r"(?i)(\*\*Sources\*\*|#{1,4}\s+Sources|Sources:)", markdown)
+    if not match:
+        return markdown
+
+    before = markdown[: match.start()].rstrip()
+    source_text = markdown[match.end() :].strip()
+    source_text = re.sub(r"\s+(\[\d+\]\s+)", r"\n\1", source_text)
+    source_text = re.sub(r"\s+(\d+\.\s+)", r"\n\1", source_text)
+    source_text = re.sub(r"\n{2,}", "\n", source_text).strip()
+    if source_text:
+        return f"{before}\n\n### Sources\n{source_text}".strip()
+    return f"{before}\n\n### Sources".strip()
+
+
+def _break_inline_subheads(markdown: str) -> str:
+    return re.sub(r"(?<!\n)\s+(\*\*[^*\n]{3,90}(?:\.\*\*|:\*\*))\s+", r"\n\n\1 ", markdown)
+
+
+def _remove_duplicate_sources_blocks(markdown: str) -> str:
+    markers = list(re.finditer(r"(?im)^\s*(?:#{1,4}\s+Sources|Sources|\*\*Sources\*\*)\s*:?\s*$", markdown))
+    if len(markers) <= 1:
+        return markdown
+    return markdown[: markers[1].start()].rstrip()
 
 
 def _rewrite_markdown_links_to_numbers(markdown: str, sources: list[SourceRecord]) -> str:
@@ -193,10 +259,11 @@ def _numbered_sources_lines(sources: list[SourceRecord]) -> list[str]:
         return []
     lines = ["", "Sources"]
     for index, source in enumerate(sources, start=1):
+        title = clean_source_title(source.title) or source.source_id
         if source.url:
-            lines.append(f"[{index}] - {source.title}: {source.url}")
+            lines.append(f"[{index}] - {title}: {source.url}")
         else:
-            lines.append(f"[{index}] - {source.title} ({source.source_id})")
+            lines.append(f"[{index}] - {title} ({source.source_id})")
     return lines
 
 

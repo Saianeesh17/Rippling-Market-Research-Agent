@@ -23,6 +23,8 @@ def test_anthropic_provider_uses_first_party_api_by_default(monkeypatch):
     assert llm.settings.auth_token == "test-anthropic-key"
     assert llm.settings.verify_ssl is True
     assert llm.settings.use_authorization_header is False
+    assert llm.settings.max_tokens == 8000
+    assert llm.settings.thinking_mode == "disabled"
 
 
 def test_anthropic_qgenie_provider_uses_requested_gateway_fields(monkeypatch):
@@ -46,6 +48,24 @@ def test_anthropic_qgenie_provider_uses_requested_gateway_fields(monkeypatch):
     assert llm.settings.auth_token == "test-qgenie-token"
     assert llm.settings.verify_ssl is False
     assert llm.settings.use_authorization_header is True
+    assert llm.settings.max_tokens == 8000
+    assert llm.settings.thinking_mode == "disabled"
+
+
+def test_anthropic_provider_allows_thinking_and_token_overrides(monkeypatch):
+    monkeypatch.setenv("USE_LLM", "true")
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+    monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "12000")
+    monkeypatch.setenv("ANTHROPIC_THINKING", "adaptive")
+    monkeypatch.setenv("ANTHROPIC_EFFORT", "low")
+
+    llm = create_llm(use_llm=True)
+
+    assert llm is not None
+    assert llm.settings.max_tokens == 12000
+    assert llm.settings.thinking_mode == "adaptive"
+    assert llm.settings.effort == "low"
 
 
 def test_groq_provider_uses_openai_compatible_endpoint(monkeypatch):

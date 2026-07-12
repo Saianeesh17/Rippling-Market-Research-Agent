@@ -64,6 +64,15 @@ def test_opportunities_have_claims_and_pillars(tmp_path):
     assert all(opp.mapped_rippling_pillars for opp in state.rippling_opportunities)
 
 
+def test_generated_markdown_always_has_market_opportunities_for_rippling_section(tmp_path):
+    run_graph("Gusto", output_dir=tmp_path)
+
+    markdown = (tmp_path / "gusto_brief.md").read_text(encoding="utf-8")
+    assert "## 7. Market Opportunities for Rippling" in markdown
+    assert "Rippling positions itself as a unified workforce platform" in markdown
+    assert "What Rippling should exploit:" in markdown
+
+
 def test_unknown_competitor_fallback_is_lower_confidence(tmp_path):
     state = run_graph("ACME Workforce Tool", output_dir=tmp_path)
 

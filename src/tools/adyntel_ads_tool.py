@@ -13,6 +13,7 @@ from src.cache import get_cached_json, set_cached_json
 from src.config import utc_now_iso
 from src.data.dummy_sources import slugify
 from src.schemas import SourceRecord, ToolInput, ToolResult
+from src.text_cleanup import clean_source_title, clean_template_placeholders
 from src.tools.base import BaseSourceTool
 from src.tools.domain_utils import normalize_company_domain
 
@@ -232,13 +233,13 @@ class BaseAdyntelAdsTool(BaseSourceTool):
         ad: dict[str, Any],
         index: int,
     ) -> SourceRecord | None:
-        content = self._content_for_ad(ad)
+        content = clean_template_placeholders(self._content_for_ad(ad))
         if not content:
             content = json.dumps(_compact_for_log(ad), ensure_ascii=True)[:1400]
         if not content:
             return None
 
-        title = self._title_for_ad(ad, index)
+        title = clean_source_title(self._title_for_ad(ad, index))
         source_hash = hashlib.sha1(
             json.dumps(_compact_for_log(ad), sort_keys=True, ensure_ascii=True, default=str).encode("utf-8")
         ).hexdigest()[:10]
@@ -271,11 +272,11 @@ class BaseAdyntelAdsTool(BaseSourceTool):
     def _title_for_ad(self, ad: dict[str, Any], index: int) -> str:
         headline = _first_nonempty(
             [
-                _nested_string(ad, ["headline", "title"]),
-                _nested_string(ad, ["snapshot", "title"]),
-                _nested_string(ad, ["snapshot", "body", "text"]),
-                _nested_string(ad, ["commentary", "text"]),
-                _nested_string(ad, ["advertiser_name"]),
+                clean_source_title(_nested_string(ad, ["headline", "title"])),
+                clean_source_title(_nested_string(ad, ["snapshot", "title"])),
+                clean_source_title(_nested_string(ad, ["snapshot", "body", "text"])),
+                clean_source_title(_nested_string(ad, ["commentary", "text"])),
+                clean_source_title(_nested_string(ad, ["advertiser_name"])),
             ]
         )
         return f"{self.display_name} ad {index}: {headline[:90]}" if headline else f"{self.display_name} ad {index}"

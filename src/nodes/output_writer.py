@@ -1,25 +1,38 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from src.config import utc_now_iso
+from src.nodes.category_report_sections import _normalize_category_markdown
+from src.data.dummy_rippling_positioning import RIPPLING_CURRENT_POSITION
 from src.data.dummy_sources import slugify
 from src.llm.base import BaseLLM
 from src.schemas import LLMCallLog
 from src.schemas import FinalReport
 from src.state import AgentState
+from src.text_cleanup import clean_source_title, clean_template_placeholders
 
 
 MAX_SECTION_CHARS_FOR_FINAL_LLM = 4000
 MAX_CLAIMS_FOR_FINAL_LLM = 24
 MAX_RECENT_CHANGES_FOR_FINAL_LLM = 8
-MAX_OPPORTUNITIES_FOR_FINAL_LLM = 6
-MAX_CAMPAIGN_RECOMMENDATIONS_FOR_FINAL_LLM = 8
 MAX_CITATIONS_PER_SECTION_FOR_FINAL_LLM = 8
 MAX_TOOL_FAILURES_FOR_FINAL_LLM = 20
 MAX_OUTPUT_JSON_REQUEST_FIELD_CHARS = 500
 DETAILED_CATEGORY_HEADING = "## Detailed Category Research"
+RIPPLING_MARKET_OPPORTUNITIES_HEADING = "## 7. Market Opportunities for Rippling"
+CATEGORY_REPORT_SECTION_TITLES = {
+    "website positioning",
+    "product and use-case pages",
+    "product and use case pages",
+    "pricing and packaging",
+    "paid ads messaging",
+    "social and linkedin posts",
+    "press and news",
+    "comparison pages",
+}
 API_PAYLOAD_SUMMARY_KEYS = {
     "cache_hit",
     "cached",
@@ -61,7 +74,8 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs", llm: Ba
 
     report = _build_report(state)
     markdown = _try_render_markdown_with_llm(state, report, llm) if llm else None
-    markdown_path.write_text(markdown or _render_markdown(state), encoding="utf-8")
+    rendered_markdown = clean_template_placeholders(markdown or _render_markdown(state))
+    markdown_path.write_text(rendered_markdown, encoding="utf-8")
     report.llm_call_logs = state.llm_call_logs
     report.report_question_logs = state.report_question_logs
     json_path.write_text(json.dumps(_build_output_json_payload(report), indent=2), encoding="utf-8")
@@ -113,14 +127,25 @@ def _try_render_markdown_with_llm(state: AgentState, report: FinalReport, llm: B
     try:
         prompt = "\n".join(
             [
-                "Generate the final markdown competitive brief from the structured data below.",
+                "Generate the final markdown competitive brief about the target company from the structured data below.",
                 "Rules:",
                 "- Return only markdown.",
+                "- Keep the main brief focused on the target company only.",
+                "- Do not frame the report as target company vs. Rippling.",
+                "- Do not use a 'vs. Rippling' title or comparison-led opening.",
+                (
+                    "- Do not mention Rippling in the executive summary, competitor snapshot, source coverage, "
+                    "category research, product positioning, pricing, social, ads, or news sections."
+                ),
                 "- Category-specific research sections are already written by specialist subagents.",
                 "- Include a section named 'Detailed Category Research' and reproduce each category_report_sections[].markdown block verbatim, including inline citations and Sources lists.",
                 "- Do not replace the category_report_sections with a short bullet summary.",
-                "- Your job is final synthesis: executive summary, confidence/gaps, market gaps, Rippling opportunities, and campaign implications.",
-                "- Keep every substantive claim grounded in provided sources, claims, category sections, opportunities, and eval summary.",
+                (
+                    "- Do not write the 'Market Opportunities for Rippling' section yourself; "
+                    "the report writer appends that as a separate late section."
+                ),
+                "- Your job is final synthesis of the target company's positioning, messaging themes, recent changes, confidence, and gaps.",
+                "- Keep every substantive claim grounded in provided sources, claims, category sections, and eval summary.",
                 "- Do not invent real-world facts or private strategy.",
                 "- Preserve the required sections 1 through 10.",
                 "- Clearly caveat third-party pricing evidence as lower confidence.",
@@ -131,10 +156,14 @@ def _try_render_markdown_with_llm(state: AgentState, report: FinalReport, llm: B
         markdown = llm.complete(
             prompt,
             system_prompt="You are an evidence-first competitive marketing brief writer for Rippling.",
-        ).strip()
+        )
+        markdown = _coerce_markdown_report(markdown)
         if not markdown.startswith("#"):
             raise ValueError("LLM report did not look like markdown with a top-level heading.")
+        markdown = _normalize_target_company_title(markdown, state)
         markdown = _ensure_detailed_category_sections(markdown, state)
+        markdown = _ensure_rippling_market_opportunities_section(markdown, state)
+        markdown = clean_template_placeholders(markdown)
         state.llm_call_logs.append(
             LLMCallLog(
                 stage="final_markdown_report",
@@ -162,6 +191,131 @@ def _try_render_markdown_with_llm(state: AgentState, report: FinalReport, llm: B
         return None
 
 
+def _ensure_rippling_market_opportunities_section(markdown: str, state: AgentState) -> str:
+    replacement = _render_rippling_market_opportunities_section(state)
+    bounds = _rippling_market_opportunities_section_bounds(markdown)
+    if bounds is not None:
+        start_index, end_index = bounds
+        lines = markdown.splitlines()
+        markdown = "\n".join(lines[:start_index] + lines[end_index:]).rstrip()
+
+    return "\n".join([markdown.rstrip(), "", replacement, ""])
+
+
+def _render_rippling_market_opportunities_section(state: AgentState) -> str:
+    lines = [
+        RIPPLING_MARKET_OPPORTUNITIES_HEADING,
+        "",
+        "### Rippling's Current Position",
+        RIPPLING_CURRENT_POSITION,
+        "",
+        "### Positioning Gaps and Opportunities to Exploit",
+    ]
+    if not state.rippling_opportunities:
+        lines.extend(
+            [
+                (
+                    "- No grounded Rippling opportunity mapping was generated from the available sources. "
+                    "Treat this as a report gap and run more source discovery before using campaign recommendations."
+                ),
+            ]
+        )
+        return "\n".join(lines)
+
+    for opportunity in state.rippling_opportunities:
+        support = ", ".join(opportunity.supporting_claim_ids) or "none"
+        pillars = ", ".join(opportunity.mapped_rippling_pillars) or "none"
+        lines.extend(
+            [
+                "",
+                f"#### {opportunity.opportunity_id}: {opportunity.campaign_angle}",
+                f"- Competitor strategy: {opportunity.competitor_strategy}",
+                f"- Positioning gap: {opportunity.competitor_gap}",
+                f"- Why the gap matters: {opportunity.why_gap_matters}",
+                f"- Rippling advantage: {opportunity.rippling_advantage}",
+                f"- What Rippling should exploit: {opportunity.campaign_angle}",
+                f"- Example campaign copy: {opportunity.example_copy}",
+                f"- Mapped Rippling pillars: {pillars}",
+                f"- Supporting evidence: {support}",
+                f"- Confidence: {opportunity.confidence}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _rippling_market_opportunities_section_bounds(markdown: str) -> tuple[int, int] | None:
+    return _heading_section_bounds(markdown, _is_rippling_market_opportunities_heading)
+
+
+def _is_rippling_market_opportunities_heading(line: str) -> bool:
+    stripped = line.strip().lower()
+    if not stripped.startswith("## "):
+        return False
+    return (
+        "rippling" in stripped
+        and ("opportunit" in stripped or "gap" in stripped)
+    ) or "market opportunities for rippling" in stripped
+
+
+def _is_detailed_category_heading(line: str) -> bool:
+    stripped = line.strip().lower()
+    return stripped.startswith("## ") and "detailed category research" in stripped
+
+
+def _heading_section_bounds(markdown: str, predicate) -> tuple[int, int] | None:
+    lines = markdown.splitlines()
+    start_index = None
+    for index, line in enumerate(lines):
+        if predicate(line):
+            start_index = index
+            break
+    if start_index is None:
+        return None
+
+    end_index = len(lines)
+    for index in range(start_index + 1, len(lines)):
+        if lines[index].strip().startswith("## "):
+            end_index = index
+            break
+    return start_index, end_index
+
+
+def _normalize_target_company_title(markdown: str, state: AgentState) -> str:
+    if not state.competitor:
+        return markdown
+    lines = markdown.splitlines()
+    if not lines:
+        return markdown
+    first_heading_index = next((index for index, line in enumerate(lines) if line.startswith("# ")), None)
+    if first_heading_index is None:
+        return markdown
+    heading = lines[first_heading_index].strip().lower()
+    if "rippling" in heading or " vs " in heading or " versus " in heading:
+        lines[first_heading_index] = f"# Competitive Brief: {state.competitor.name}"
+    return "\n".join(lines)
+
+
+def _coerce_markdown_report(response: str) -> str:
+    markdown = response.strip()
+    if markdown.startswith("```"):
+        lines = markdown.splitlines()
+        if lines and lines[0].strip().lower() in {"```", "```markdown", "```md"}:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        markdown = "\n".join(lines).strip()
+    if markdown.startswith("#"):
+        return markdown
+    lines = markdown.splitlines()
+    first_heading_index = next((index for index, line in enumerate(lines) if line.startswith("#")), None)
+    if first_heading_index is None:
+        return markdown
+    lines = lines[first_heading_index:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
 def _ensure_detailed_category_sections(markdown: str, state: AgentState) -> str:
     if not state.category_report_sections:
         return markdown
@@ -179,13 +333,17 @@ def _ensure_detailed_category_sections(markdown: str, state: AgentState) -> str:
 
 
 def _render_detailed_category_sections(state: AgentState) -> str:
+    section_blocks = [
+        _normalize_category_markdown(section.markdown.strip(), section.title)
+        for section in state.category_report_sections
+    ]
     return "\n".join(
         [
             DETAILED_CATEGORY_HEADING,
             "",
             "The following sections preserve the full category subagent findings, inline citations, and source lists.",
             "",
-            *[section.markdown.strip() for section in state.category_report_sections],
+            "\n\n".join(section_blocks),
         ]
     )
 
@@ -208,8 +366,7 @@ def _detailed_category_section_bounds(markdown: str) -> tuple[int, int] | None:
     lines = markdown.splitlines()
     start_index = None
     for index, line in enumerate(lines):
-        stripped = line.strip().lower()
-        if stripped.startswith("## ") and "detailed category research" in stripped:
+        if _is_detailed_category_heading(line):
             start_index = index
             break
     if start_index is None:
@@ -217,11 +374,35 @@ def _detailed_category_section_bounds(markdown: str) -> tuple[int, int] | None:
 
     end_index = len(lines)
     for index in range(start_index + 1, len(lines)):
-        if lines[index].strip().startswith("## "):
+        stripped = lines[index].strip()
+        if not stripped.startswith("## "):
+            continue
+        if _is_rippling_market_opportunities_heading(stripped) or _is_final_report_boundary_heading(stripped):
             end_index = index
             break
-
     return start_index, end_index
+
+
+def _is_final_report_boundary_heading(line: str) -> bool:
+    stripped = line.strip().lower()
+    if not stripped.startswith("## "):
+        return False
+    heading = stripped.removeprefix("## ").strip()
+    if _is_category_report_heading_like(heading):
+        return False
+    return (
+        bool(re.match(r"\d+\.\s+", heading))
+        or "eval summary" in heading
+        or "evaluation summary" in heading
+        or "confidence" in heading
+    )
+
+
+def _is_category_report_heading_like(heading: str) -> bool:
+    return any(
+        heading == category_title or heading.startswith(f"{category_title} ")
+        for category_title in CATEGORY_REPORT_SECTION_TITLES
+    )
 
 
 def _build_output_json_payload(report: FinalReport) -> dict:
@@ -345,10 +526,13 @@ def _build_final_llm_payload(state: AgentState, report: FinalReport) -> dict:
                 "category": section.category,
                 "title": section.title,
                 "confidence": section.confidence,
-                "markdown": _compact_text(section.markdown, limit=MAX_SECTION_CHARS_FOR_FINAL_LLM),
+                "markdown": _compact_text(
+                    clean_template_placeholders(section.markdown),
+                    limit=MAX_SECTION_CHARS_FOR_FINAL_LLM,
+                ),
                 "citations": [
                     {
-                        "title": citation.title,
+                        "title": clean_source_title(citation.title),
                         "url": citation.url,
                     }
                     for citation in section.citations[:MAX_CITATIONS_PER_SECTION_FOR_FINAL_LLM]
@@ -376,31 +560,6 @@ def _build_final_llm_payload(state: AgentState, report: FinalReport) -> dict:
                 "source_titles": _source_titles_for_claim(change.evidence_source_ids, source_by_id),
             }
             for change in report.recent_changes[:MAX_RECENT_CHANGES_FOR_FINAL_LLM]
-        ],
-        "rippling_opportunities": [
-            {
-                "competitor_strategy": _compact_text(opportunity.competitor_strategy, limit=300),
-                "competitor_gap": _compact_text(opportunity.competitor_gap, limit=300),
-                "why_gap_matters": _compact_text(opportunity.why_gap_matters, limit=300),
-                "rippling_advantage": _compact_text(opportunity.rippling_advantage, limit=300),
-                "campaign_angle": _compact_text(opportunity.campaign_angle, limit=220),
-                "example_copy": _compact_text(opportunity.example_copy, limit=220),
-                "mapped_rippling_pillars": opportunity.mapped_rippling_pillars,
-                "confidence": opportunity.confidence,
-            }
-            for opportunity in report.rippling_opportunities[:MAX_OPPORTUNITIES_FOR_FINAL_LLM]
-        ],
-        "campaign_recommendations": [
-            {
-                "angle": _compact_text(recommendation.angle, limit=180),
-                "target_segment": _compact_text(recommendation.target_segment, limit=120),
-                "message": _compact_text(recommendation.message, limit=240),
-                "recommended_channels": recommendation.recommended_channels,
-                "example_copy": _compact_text(recommendation.example_copy, limit=220),
-                "why_it_works": _compact_text(recommendation.why_it_works, limit=260),
-                "confidence": recommendation.confidence,
-            }
-            for recommendation in report.campaign_recommendations[:MAX_CAMPAIGN_RECOMMENDATIONS_FOR_FINAL_LLM]
         ],
         "eval_summary": report.eval_summary.model_dump(mode="json") if report.eval_summary else None,
     }
@@ -444,7 +603,7 @@ def _source_titles_for_claim(source_ids: list[str], source_by_id: dict) -> list[
         source = source_by_id.get(source_id)
         if not source:
             continue
-        title = _compact_text(source.title, limit=90)
+        title = _compact_text(clean_source_title(source.title), limit=90)
         if title and title not in titles:
             titles.append(title)
         if len(titles) >= 4:
@@ -471,30 +630,13 @@ def _render_markdown(state: AgentState) -> str:
     pricing_lines = []
     for source in pricing_sources:
         source_kind = "official competitor page" if source.is_official else "third-party pricing source"
-        pricing_lines.append(f"- {source.title}: {source_kind}. {source.notes or 'Public pricing evidence.'}")
+        pricing_lines.append(f"- {clean_source_title(source.title)}: {source_kind}. {source.notes or 'Public pricing evidence.'}")
     if not pricing_lines:
         pricing_lines.append("- No useful public pricing source found.")
 
     recent_lines = [
         f"- {change.change} Confidence {change.confidence}. Evidence: {', '.join(change.evidence_source_ids) or 'none'}"
         for change in state.recent_changes
-    ]
-    opportunity_lines = []
-    for opportunity in state.rippling_opportunities:
-        opportunity_lines.extend(
-            [
-                f"### {opportunity.opportunity_id}",
-                f"Competitor strategy: {opportunity.competitor_strategy}",
-                f"Gap: {opportunity.competitor_gap}",
-                f"Rippling opportunity: {opportunity.rippling_advantage}",
-                f"Campaign angle: {opportunity.campaign_angle}",
-                f"Example copy: {opportunity.example_copy}",
-                f"Supporting claims: {', '.join(opportunity.supporting_claim_ids)}",
-            ]
-        )
-    campaign_lines = [
-        f"- {rec.angle}: {rec.message} Channels: {', '.join(rec.recommended_channels)}. Example: {rec.example_copy}"
-        for rec in state.campaign_recommendations
     ]
     eval_lines = []
     if state.eval_summary:
@@ -519,7 +661,7 @@ def _render_markdown(state: AgentState) -> str:
             *theme_lines,
             "",
             "## Category Research Sections",
-            *[section.markdown for section in state.category_report_sections],
+            *[_normalize_category_markdown(section.markdown, section.title) for section in state.category_report_sections],
             "",
             "## 4. Product Positioning",
             *(product_positioning_lines or ["- No product positioning claims extracted from website or product-page sources."]),
@@ -530,17 +672,13 @@ def _render_markdown(state: AgentState) -> str:
             "## 6. Recent Changes in Public Messaging",
             *(recent_lines or ["- No recent public messaging changes detected."]),
             "",
-            "## 7. Rippling Opportunities",
-            *opportunity_lines,
-            "",
-            "## 8. Campaign Angles Rippling Could Exploit",
-            *campaign_lines,
-            "",
             "## 9. Confidence, Gaps, and Limitations",
             "All data is public-source evidence. Third-party pricing and comparison evidence is deliberately lower confidence than official sources.",
             "",
             "## 10. Eval Summary",
             *eval_lines,
+            "",
+            _render_rippling_market_opportunities_section(state),
             "",
         ]
     )
@@ -698,7 +836,7 @@ def _product_positioning_lines(state: AgentState) -> list[str]:
             source = source_by_id.get(source_id)
             if not source:
                 continue
-            title = _compact_text(source.title, limit=72)
+            title = _compact_text(clean_source_title(source.title), limit=72)
             if title and title not in source_titles:
                 source_titles.append(title)
             if len(source_titles) >= 3:

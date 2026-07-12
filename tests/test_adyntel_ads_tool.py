@@ -95,6 +95,34 @@ def test_adyntel_ads_tool_limits_to_five_ads_and_redacts_credentials(monkeypatch
     assert result.sources[0].url == "https://gusto.com/ad-1"
 
 
+def test_adyntel_ads_tool_drops_template_placeholder_ad_titles():
+    tool = AdyntelMetaAdsTool()
+
+    source = tool._source_from_ad(
+        ToolInput(
+            competitor_name="Gusto",
+            category="paid_ads",
+            resolved_company_domain="gusto.com",
+        ),
+        "gusto.com",
+        {
+            "ad_archive_id": "meta-template",
+            "snapshot": {
+                "title": "{{product.name}}",
+                "page_name": "Gusto",
+                "link_url": "https://gusto.com/ad-template",
+                "body": {"text": "{{product.name}}"},
+            },
+        },
+        2,
+    )
+
+    assert source is not None
+    assert source.title == "Meta ad 2"
+    assert "{{product.name}}" not in source.title
+    assert "{{product.name}}" not in source.content
+
+
 def test_adyntel_ads_tool_uses_cache_before_ttl_expiry(monkeypatch):
     monkeypatch.setenv("ADYNTEL_EMAIL", "test@example.com")
     monkeypatch.setenv("ADYNTEL_API_KEY", "test-key")

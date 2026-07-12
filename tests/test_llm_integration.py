@@ -6,7 +6,8 @@ from src.config import utc_now_iso
 from src.graph import run_graph
 from src.llm.base import BaseLLM
 from src.nodes.output_writer import write_outputs
-from src.schemas import CategoryReportSection, CompetitorProfile, ReportCitation, SourceRecord, ToolCallLog
+from src.schemas import CategoryReportSection, CompetitorProfile, ReportCitation
+from src.schemas import RipplingOpportunity, SourceRecord, ToolCallLog
 from src.state import AgentState
 
 
@@ -116,6 +117,8 @@ def test_final_report_llm_prompt_and_data_json_exclude_raw_api_payloads(tmp_path
     assert "DO_NOT_SEND_TO_FINAL_LLM" not in final_prompt
     assert "tool_call_logs" not in final_prompt
     assert "api_response" not in final_prompt
+    assert "rippling_current_position" not in final_prompt
+    assert "Rippling positions itself as a unified workforce platform" not in final_prompt
     payload = json.loads((tmp_path / "gusto_data.json").read_text(encoding="utf-8"))
     payload_text = json.dumps(payload)
     assert "DO_NOT_SEND_TO_FINAL_LLM" not in payload_text
@@ -136,6 +139,14 @@ class SummaryOnlyReportLLM(BaseLLM):
         return "# Competitive Marketing Brief: Gusto\n\n## Executive Summary\n\nShort synthesis only."
 
 
+class FencedReportLLM(BaseLLM):
+    provider = "test"
+    model = "test-model"
+
+    def complete(self, prompt: str, *, system_prompt: str | None = None, json_mode: bool = False) -> str:
+        return "Here is the report:\n\n```markdown\n# Competitive Marketing Brief: Gusto\n\n## Executive Summary\n\nFenced synthesis.\n```"
+
+
 class PartialDetailedReportLLM(BaseLLM):
     provider = "test"
     model = "test-model"
@@ -152,6 +163,64 @@ class PartialDetailedReportLLM(BaseLLM):
             "[1] - Short source: https://example.com\n\n"
             "## Evaluation Summary\n\n"
             "Keep this section after the model-generated detail block."
+        )
+
+
+class H2DetailedReportLLM(BaseLLM):
+    provider = "test"
+    model = "test-model"
+
+    def complete(self, prompt: str, *, system_prompt: str | None = None, json_mode: bool = False) -> str:
+        return (
+            "# Competitive Marketing Brief: Gusto\n\n"
+            "## Executive Summary\n\n"
+            "High-level synthesis.\n\n"
+            "## Detailed Category Research\n\n"
+            "## Website Positioning\n\n"
+            "Model-only website detail that should be removed.\n\n"
+            "## Core Messaging Themes\n\n"
+            "Model-only nested detail that should also be removed.\n\n"
+            "## 9. Confidence, Gaps, and Limitations\n\n"
+            "Keep this final report section."
+        )
+
+
+class InlineH2DetailedReportLLM(BaseLLM):
+    provider = "test"
+    model = "test-model"
+
+    def complete(self, prompt: str, *, system_prompt: str | None = None, json_mode: bool = False) -> str:
+        return (
+            "# Competitive Marketing Brief: Gusto\n\n"
+            "## Executive Summary\n\n"
+            "High-level synthesis.\n\n"
+            "## Detailed Category Research\n\n"
+            "## Website Positioning Model-only website detail that should be removed. "
+            "### Sources [1] Short source — https://example.com\n\n"
+            "## Product And Use-Case Pages Model-only product detail that should also be removed.\n\n"
+            "## 9. Confidence, Gaps, and Limitations\n\n"
+            "Keep this final report section."
+        )
+
+
+class ShortOpportunityReportLLM(BaseLLM):
+    provider = "test"
+    model = "test-model"
+
+    def complete(self, prompt: str, *, system_prompt: str | None = None, json_mode: bool = False) -> str:
+        return (
+            "# Competitive Brief: Gusto vs. Rippling\n\n"
+            "## Executive Summary\n\n"
+            "High-level synthesis.\n\n"
+            "## 7. Rippling Opportunities\n\n"
+            "Short opportunity summary.\n\n"
+            "## 8. Campaign Angles Rippling Could Exploit\n\n"
+            "- Keep campaign section.\n\n"
+            "## Detailed Category Research\n\n"
+            "### Website Positioning\n\n"
+            "Keep detailed company research.\n\n"
+            "## Core Messaging Themes\n\n"
+            "Nested company-only category detail."
         )
 
 
@@ -184,8 +253,29 @@ def test_final_report_preserves_detailed_category_sections_when_llm_summarizes(t
 
     markdown = (tmp_path / "gusto_brief.md").read_text(encoding="utf-8")
     assert "## Detailed Category Research" in markdown
-    assert "### Website Positioning" in markdown
+    assert "## Website Positioning" in markdown
     assert "[1] - Official homepage: https://gusto.com" in markdown
+
+
+def test_final_report_accepts_fenced_markdown_response(tmp_path):
+    state = AgentState(
+        user_input="Gusto",
+        real_sources_only=True,
+        competitor=CompetitorProfile(
+            name="Gusto",
+            domain="gusto.com",
+            category="unknown",
+            description="Real-source test profile.",
+            confidence=0.7,
+        ),
+    )
+
+    write_outputs(state, output_dir=tmp_path, llm=FencedReportLLM())
+
+    markdown = (tmp_path / "gusto_brief.md").read_text(encoding="utf-8")
+    assert markdown.startswith("# Competitive Marketing Brief: Gusto")
+    assert "Here is the report" not in markdown
+    assert "```" not in markdown
 
 
 def test_final_report_replaces_short_llm_detail_block_with_full_subagent_sections(tmp_path):
@@ -243,3 +333,129 @@ def test_final_report_replaces_short_llm_detail_block_with_full_subagent_section
     assert "Gusto positions around payroll, HR, and benefits workflows for small businesses [1]." in markdown
     assert "Gusto's pricing evidence should keep the full caveat and sourced detail [1]." in markdown
     assert "[1] - Pricing page: https://gusto.com/pricing" in markdown
+
+
+def test_final_report_removes_entire_model_detail_block_with_h2_category_headings(tmp_path):
+    state = AgentState(
+        user_input="Gusto",
+        real_sources_only=True,
+        competitor=CompetitorProfile(
+            name="Gusto",
+            domain="gusto.com",
+            category="unknown",
+            description="Real-source test profile.",
+            confidence=0.7,
+        ),
+        category_report_sections=[
+            CategoryReportSection(
+                section_id="section_website_positioning",
+                category="website_positioning",
+                title="Website Positioning",
+                markdown=(
+                    "## Website Positioning\n\n"
+                    "Canonical website detail from the category subagent [1].\n\n"
+                    "### Sources\n"
+                    "[1] - Official homepage: https://gusto.com"
+                ),
+                source_ids=["src_1"],
+                citations=[ReportCitation(source_id="src_1", title="Official homepage", url="https://gusto.com")],
+                generated_by="test",
+                confidence=0.8,
+            )
+        ],
+    )
+
+    write_outputs(state, output_dir=tmp_path, llm=H2DetailedReportLLM())
+
+    markdown = (tmp_path / "gusto_brief.md").read_text(encoding="utf-8")
+    assert markdown.count("## Detailed Category Research") == 1
+    assert "Canonical website detail from the category subagent [1]." in markdown
+    assert "Model-only website detail that should be removed." not in markdown
+    assert "Model-only nested detail that should also be removed." not in markdown
+    assert "Keep this final report section." in markdown
+
+
+def test_final_report_removes_inline_h2_category_detail_block(tmp_path):
+    state = AgentState(
+        user_input="Gusto",
+        real_sources_only=True,
+        competitor=CompetitorProfile(
+            name="Gusto",
+            domain="gusto.com",
+            category="unknown",
+            description="Real-source test profile.",
+            confidence=0.7,
+        ),
+        category_report_sections=[
+            CategoryReportSection(
+                section_id="section_website_positioning",
+                category="website_positioning",
+                title="Website Positioning",
+                markdown=(
+                    "## Website Positioning\n\n"
+                    "Canonical website detail from the category subagent [1].\n\n"
+                    "### Sources\n"
+                    "[1] - Official homepage: https://gusto.com"
+                ),
+                source_ids=["src_1"],
+                citations=[ReportCitation(source_id="src_1", title="Official homepage", url="https://gusto.com")],
+                generated_by="test",
+                confidence=0.8,
+            )
+        ],
+    )
+
+    write_outputs(state, output_dir=tmp_path, llm=InlineH2DetailedReportLLM())
+
+    markdown = (tmp_path / "gusto_brief.md").read_text(encoding="utf-8")
+    assert markdown.count("## Detailed Category Research") == 1
+    assert "Canonical website detail from the category subagent [1]." in markdown
+    assert "Model-only website detail that should be removed." not in markdown
+    assert "Model-only product detail that should also be removed." not in markdown
+    assert "Keep this final report section." in markdown
+
+
+def test_final_report_replaces_short_opportunity_block_with_canonical_rippling_section(tmp_path):
+    state = AgentState(
+        user_input="Gusto",
+        real_sources_only=True,
+        competitor=CompetitorProfile(
+            name="Gusto",
+            domain="gusto.com",
+            category="unknown",
+            description="Real-source test profile.",
+            confidence=0.7,
+        ),
+        rippling_opportunities=[
+            RipplingOpportunity(
+                opportunity_id="opp_001",
+                competitor_strategy="Gusto leads with payroll simplicity.",
+                competitor_gap=(
+                    "Gusto's public story is less explicit about HR, IT, spend, and finance on one data layer."
+                ),
+                why_gap_matters="The gap lets Rippling reframe the buying problem as fragmented workforce operations.",
+                rippling_advantage=(
+                    "Rippling can position around connected employee data across HR, IT, finance, apps, payroll, and spend."
+                ),
+                campaign_angle="Unify the employee lifecycle beyond payroll.",
+                example_copy="Payroll is one workflow. Rippling connects every employee action around it.",
+                supporting_claim_ids=["claim_001"],
+                mapped_rippling_pillars=["Unified HR, IT, and Finance", "Employee lifecycle automation"],
+                confidence=0.82,
+            )
+        ],
+    )
+
+    write_outputs(state, output_dir=tmp_path, llm=ShortOpportunityReportLLM())
+
+    markdown = (tmp_path / "gusto_brief.md").read_text(encoding="utf-8")
+    assert markdown.startswith("# Competitive Brief: Gusto")
+    assert "Gusto vs. Rippling" not in markdown
+    assert markdown.count("## 7. Market Opportunities for Rippling") == 1
+    assert "Short opportunity summary." not in markdown
+    assert "Rippling positions itself as a unified workforce platform" in markdown
+    assert "What Rippling should exploit: Unify the employee lifecycle beyond payroll." in markdown
+    assert "## 7. Market Opportunities for Rippling" in markdown
+    assert markdown.index("## 7. Market Opportunities for Rippling") > markdown.index("## 8. Campaign Angles")
+    assert markdown.index("## 7. Market Opportunities for Rippling") > markdown.index("## Detailed Category Research")
+    assert markdown.index("## 7. Market Opportunities for Rippling") > markdown.index("## Core Messaging Themes")

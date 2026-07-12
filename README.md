@@ -227,6 +227,8 @@ ANTHROPIC_API_KEY=...
 ANTHROPIC_BASE_URL=
 ANTHROPIC_VERIFY_SSL=true
 ANTHROPIC_MODEL=claude-sonnet-5
+ANTHROPIC_MAX_TOKENS=8000
+ANTHROPIC_THINKING=disabled
 ```
 
 Anthropic models through the Qualcomm QGenie gateway are still supported when explicitly configured:
@@ -238,9 +240,12 @@ ANTHROPIC_BASE_URL=https://qgenie-api.qualcomm.com/
 ANTHROPIC_AUTH_TOKEN=...
 ANTHROPIC_VERIFY_SSL=false
 ANTHROPIC_MODEL=claude-opus-4-8
+ANTHROPIC_MAX_TOKENS=8000
+ANTHROPIC_THINKING=disabled
 ```
 
 The code uses Anthropic's native Messages API shape against `{ANTHROPIC_BASE_URL}/v1/messages`. With no `ANTHROPIC_BASE_URL`, it calls `https://api.anthropic.com/v1/messages` using `ANTHROPIC_API_KEY`. For QGenie, `ANTHROPIC_AUTH_TOKEN` is passed as the gateway credential and `ANTHROPIC_VERIFY_SSL=false` disables SSL verification only for that gateway client.
+`ANTHROPIC_THINKING=disabled` is the default because Claude Sonnet 5 can otherwise spend the whole response budget on thinking blocks and return no final text for the report writer. Set `ANTHROPIC_THINKING=adaptive` only if you also leave enough `ANTHROPIC_MAX_TOKENS` for both thinking and the visible response.
 
 Groq is also supported through its OpenAI-compatible endpoint:
 

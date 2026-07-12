@@ -3,6 +3,15 @@ from __future__ import annotations
 from src.schemas import RipplingPositioningPillar
 
 
+RIPPLING_CURRENT_POSITION = (
+    "Rippling positions itself as a unified workforce platform and business operating layer, "
+    "competing on consolidation, automation, shared employee data, and AI across HR, IT, spend, "
+    "and finance. Its strongest marketing posture is not that it is a payroll or HCM point solution, "
+    "but that it can replace fragmented tools with one system that automates work across the employee "
+    "lifecycle and gives operators more control over the business."
+)
+
+
 RIPPLING_POSITIONING_PILLARS = [
     RipplingPositioningPillar(
         pillar="Unified HR, IT, and Finance",
@@ -41,4 +50,3 @@ RIPPLING_POSITIONING_PILLARS = [
         ),
     ),
 ]
-
