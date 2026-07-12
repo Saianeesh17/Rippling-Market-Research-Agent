@@ -4,6 +4,11 @@ import argparse
 from collections import defaultdict
 
 from src.graph import run_graph
+from src.llm.base import BaseLLM
+from src.llm.service import create_llm
+from src.nodes.output_writer import refresh_json_report, refresh_run_log
+from src.nodes.report_qa import answer_report_question, is_report_qa_termination
+from src.state import AgentState
 
 
 def _print_indented(text: str, prefix: str) -> None:
@@ -11,10 +16,33 @@ def _print_indented(text: str, prefix: str) -> None:
         print(f"{prefix}{line}")
 
 
+def _run_report_qa_loop(state: AgentState, llm: BaseLLM | None) -> None:
+    if not llm:
+        print()
+        print("Interactive report Q&A requires an LLM. Re-run with --use-llm and a configured provider.")
+        return
+
+    print()
+    print("Ask follow-up questions about the report. Type 'no' to exit.")
+    while True:
+        question = input("> ").strip()
+        if is_report_qa_termination(question):
+            print("Exiting report Q&A.")
+            return
+        if not question:
+            continue
+        qa_log = answer_report_question(state, question, llm)
+        refresh_json_report(state)
+        refresh_run_log(state)
+        print()
+        print(qa_log.answer)
+        print()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the competitive intelligence agent.")
     parser.add_argument("--competitor", required=True, help="Competitor name or domain.")
-    parser.add_argument("--interactive", action="store_true", help="Reserved for future interactive replanning.")
+    parser.add_argument("--interactive", action="store_true", help="Start a post-report follow-up Q&A loop.")
     parser.add_argument("--output-dir", default="outputs", help="Directory for generated markdown and JSON files.")
     llm_group = parser.add_mutually_exclusive_group()
     llm_group.add_argument("--use-llm", action="store_true", help="Use the configured OpenAI-compatible LLM if possible.")
@@ -22,7 +50,8 @@ def main() -> None:
     args = parser.parse_args()
 
     use_llm = True if args.use_llm else False if args.no_llm else None
-    state = run_graph(args.competitor, output_dir=args.output_dir, interactive=args.interactive, use_llm=use_llm)
+    llm = create_llm(use_llm)
+    state = run_graph(args.competitor, output_dir=args.output_dir, interactive=args.interactive, use_llm=use_llm, llm=llm)
     competitor = state.competitor
     assert competitor is not None
 
@@ -79,6 +108,9 @@ def main() -> None:
         print(f"Claim grounding score: {state.eval_summary.claim_grounding_score}")
         print(f"Third-party caveat score: {state.eval_summary.third_party_caveat_score}")
         print(f"Weak sections: {', '.join(state.eval_summary.weak_sections) or 'none'}")
+
+    if args.interactive:
+        _run_report_qa_loop(state, llm)
 
 
 if __name__ == "__main__":

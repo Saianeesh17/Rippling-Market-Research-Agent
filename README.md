@@ -175,6 +175,7 @@ User Input
   -> Campaign Angle Generator
   -> Eval Layer
   -> Markdown + JSON Output
+  -> Optional Report Q&A Loop
 ```
 
 ## Why This Is Agentic
@@ -217,7 +218,31 @@ The `.venv/` directory is ignored by git.
 
 ## Optional LLM Mode
 
-The repo includes `.env` and `.env.example`. Groq is the default provider:
+The repo includes `.env` and `.env.example`. Anthropic's first-party Claude API is the default provider:
+
+```text
+LLM_PROVIDER=anthropic
+USE_LLM=auto
+ANTHROPIC_API_KEY=...
+ANTHROPIC_BASE_URL=
+ANTHROPIC_VERIFY_SSL=true
+ANTHROPIC_MODEL=claude-sonnet-5
+```
+
+Anthropic models through the Qualcomm QGenie gateway are still supported when explicitly configured:
+
+```text
+LLM_PROVIDER=qgenie
+USE_LLM=auto
+ANTHROPIC_BASE_URL=https://qgenie-api.qualcomm.com/
+ANTHROPIC_AUTH_TOKEN=...
+ANTHROPIC_VERIFY_SSL=false
+ANTHROPIC_MODEL=claude-opus-4-8
+```
+
+The code uses Anthropic's native Messages API shape against `{ANTHROPIC_BASE_URL}/v1/messages`. With no `ANTHROPIC_BASE_URL`, it calls `https://api.anthropic.com/v1/messages` using `ANTHROPIC_API_KEY`. For QGenie, `ANTHROPIC_AUTH_TOKEN` is passed as the gateway credential and `ANTHROPIC_VERIFY_SSL=false` disables SSL verification only for that gateway client.
+
+Groq is also supported through its OpenAI-compatible endpoint:
 
 ```text
 LLM_PROVIDER=groq
@@ -226,21 +251,6 @@ GROQ_API_KEY=...
 GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_OPENAI_BASE_URL=https://api.groq.com/openai/v1
 ```
-
-Anthropic models through the Qualcomm QGenie gateway are also supported:
-
-```text
-LLM_PROVIDER=anthropic
-USE_LLM=auto
-ANTHROPIC_BASE_URL=https://qgenie-api.qualcomm.com/
-ANTHROPIC_AUTH_TOKEN=...
-ANTHROPIC_VERIFY_SSL=false
-ANTHROPIC_MODEL=claude-opus-4-8
-```
-
-The code uses Anthropic's native Messages API shape against `{ANTHROPIC_BASE_URL}/v1/messages`. `ANTHROPIC_AUTH_TOKEN` is passed as the gateway credential. `ANTHROPIC_VERIFY_SSL=false` disables SSL verification only for that Anthropic/QGenie client.
-
-The app uses Groq through its OpenAI-compatible endpoint, so the same chat-completions wrapper works for planner decisions and final report writing.
 
 Google AI Studio is also supported:
 
@@ -262,7 +272,7 @@ OPENAI_MODEL=gpt-5.5
 OPENAI_BASE_URL=
 ```
 
-With `LLM_PROVIDER=auto`, Anthropic/QGenie is preferred when `ANTHROPIC_AUTH_TOKEN` is set, then Groq, then Gemini, then OpenAI. With `USE_LLM=auto`, the CLI uses an LLM when the selected provider has a key and otherwise uses deterministic fallback logic. You can override LLM usage per run:
+With `LLM_PROVIDER=auto`, Anthropic is preferred when `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, then Groq, then Gemini, then OpenAI. With `USE_LLM=auto`, the CLI uses an LLM when the selected provider has a key and otherwise uses deterministic fallback logic. You can override LLM usage per run:
 
 ```bash
 python -m src.main --competitor "Gusto" --use-llm
@@ -272,21 +282,25 @@ python -m src.main --competitor "Gusto" --no-llm
 Current LLM-backed steps:
 
 - Planner decision: the model receives source coverage, gaps, replanning limits, and the bounded tool registry, then returns a validated `PlannerDecision`.
+- Category report sections: each populated category gets its own specialist LLM section with inline citations and a `Sources` list.
 - Final markdown report: the model receives the structured report data and writes the final markdown brief.
+- Post-report Q&A: when `--interactive` is used, the model routes each follow-up question to either answer directly from the generated report or run a follow-up Exa search if the report does not contain enough context.
 
 The final report writer sends a compact synthesis payload to avoid large-context/rate-limit failures. That compacting only affects the final LLM input, not `outputs/{competitor}_brief.md`. `outputs/{competitor}_data.json` also keeps API request/response fields summarized so it remains practical to inspect or reuse; raw API logs stay in `outputs/{competitor}_run.log`. After the LLM responds, the writer replaces any model-generated `Detailed Category Research` block with the full subagent-authored sections, including inline citations and `Sources` lists, so the markdown brief stays detailed even if the final LLM tries to summarize it.
 
 The CLI prints raw LLM responses for now to make debugging easier. The same responses are also written to the generated `outputs/{competitor}_run.log` file and included in `llm_call_logs` in the JSON output.
 
-The LLM does not scrape, browse, or call tools directly. Source discovery is performed by the bounded tool registry before the report-writing prompts run.
+The LLM does not scrape, browse, or call tools directly. Source discovery is performed by the bounded tool registry before the report-writing prompts run. In post-report Q&A, the router can trigger `ExaFollowUpResearchTool`; the tool call and answer are appended to `outputs/{competitor}_run.log` and the refreshed `outputs/{competitor}_data.json`.
 
 ## CLI Examples
 
 ```bash
 python -m src.main --competitor "Gusto"
-python -m src.main --competitor "Deel" --interactive
+python -m src.main --competitor "Deel" --use-llm --interactive
 python -m src.main --competitor "unknown competitor"
 ```
+
+In interactive mode, ask follow-up questions after the report is generated. Type `no`, `n`, `quit`, `exit`, or `stop` to end the loop. If the LLM decides the answer is already in the report, it answers from the report context. If not, it runs a focused Exa follow-up search and answers from those new public sources.
 
 Example output:
 

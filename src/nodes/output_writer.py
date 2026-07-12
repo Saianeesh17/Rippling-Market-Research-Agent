@@ -59,7 +59,35 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs", llm: Ba
     json_path = out_dir / f"{slug}_data.json"
     log_path = out_dir / f"{slug}_run.log"
 
-    report = FinalReport(
+    report = _build_report(state)
+    markdown = _try_render_markdown_with_llm(state, report, llm) if llm else None
+    markdown_path.write_text(markdown or _render_markdown(state), encoding="utf-8")
+    report.llm_call_logs = state.llm_call_logs
+    report.report_question_logs = state.report_question_logs
+    json_path.write_text(json.dumps(_build_output_json_payload(report), indent=2), encoding="utf-8")
+    state.final_markdown_path = str(markdown_path)
+    state.final_json_path = str(json_path)
+    state.final_log_path = str(log_path)
+    state.logs.append(f"Generated outputs: {markdown_path}, {json_path}, {log_path}.")
+    log_path.write_text(_render_run_log(state), encoding="utf-8")
+    return state
+
+
+def refresh_run_log(state: AgentState) -> None:
+    if not state.final_log_path:
+        return
+    Path(state.final_log_path).write_text(_render_run_log(state), encoding="utf-8")
+
+
+def refresh_json_report(state: AgentState) -> None:
+    if not state.final_json_path:
+        return
+    report = _build_report(state)
+    Path(state.final_json_path).write_text(json.dumps(_build_output_json_payload(report), indent=2), encoding="utf-8")
+
+
+def _build_report(state: AgentState) -> FinalReport:
+    return FinalReport(
         competitor=state.competitor,
         research_plan=state.research_plan,
         source_inventory=state.source_inventory,
@@ -67,6 +95,7 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs", llm: Ba
         coverage_gaps=state.coverage_gaps,
         tool_call_logs=state.tool_call_logs,
         llm_call_logs=state.llm_call_logs,
+        report_question_logs=state.report_question_logs,
         category_report_sections=state.category_report_sections,
         extracted_claims=state.extracted_claims,
         messaging_summary=state.messaging_summary,
@@ -75,16 +104,6 @@ def write_outputs(state: AgentState, output_dir: str | Path = "outputs", llm: Ba
         campaign_recommendations=state.campaign_recommendations,
         eval_summary=state.eval_summary,
     )
-    markdown = _try_render_markdown_with_llm(state, report, llm) if llm else None
-    markdown_path.write_text(markdown or _render_markdown(state), encoding="utf-8")
-    report.llm_call_logs = state.llm_call_logs
-    json_path.write_text(json.dumps(_build_output_json_payload(report), indent=2), encoding="utf-8")
-    state.final_markdown_path = str(markdown_path)
-    state.final_json_path = str(json_path)
-    state.final_log_path = str(log_path)
-    state.logs.append(f"Generated outputs: {markdown_path}, {json_path}, {log_path}.")
-    log_path.write_text(_render_run_log(state), encoding="utf-8")
-    return state
 
 
 def _try_render_markdown_with_llm(state: AgentState, report: FinalReport, llm: BaseLLM) -> str | None:
@@ -622,6 +641,24 @@ def _render_run_log(state: AgentState) -> str:
             ]
         )
 
+    lines.extend(["Report Q&A", "----------"])
+    if not state.report_question_logs:
+        lines.append("- No report follow-up questions were asked.")
+    for qa_log in state.report_question_logs:
+        lines.extend(
+            [
+                f"- {qa_log.timestamp} route={qa_log.route}",
+                f"  Question: {qa_log.question}",
+                f"  Reason: {qa_log.reason}",
+            ]
+        )
+        if qa_log.search_query:
+            lines.append(f"  Search query: {qa_log.search_query}")
+        if qa_log.source_ids:
+            lines.append(f"  Source IDs: {', '.join(qa_log.source_ids)}")
+        lines.extend(["  Answer:", *_indent_lines(qa_log.answer, indent=4), ""])
+    lines.append("")
+
     lines.extend(
         [
             "Generated Files",
@@ -633,6 +670,11 @@ def _render_run_log(state: AgentState) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _indent_lines(text: str, *, indent: int) -> list[str]:
+    prefix = " " * indent
+    return [f"{prefix}{line}" for line in text.splitlines() or [""]]
 
 
 def _product_positioning_lines(state: AgentState) -> list[str]:

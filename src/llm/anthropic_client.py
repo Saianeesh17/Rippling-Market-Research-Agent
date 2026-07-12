@@ -12,14 +12,15 @@ class AnthropicSettings:
     auth_token: str
     base_url: str
     verify_ssl: bool
-    model: str = "claude-sonnet-4-5"
+    model: str = "claude-sonnet-5"
     max_tokens: int = 2000
     anthropic_version: str = "2023-06-01"
-    provider: str = "anthropic-qgenie"
+    provider: str = "anthropic"
+    use_authorization_header: bool = False
 
 
 class AnthropicCompatibleLLM(BaseLLM):
-    """Anthropic Messages API client for Qualcomm QGenie-style gateways."""
+    """Anthropic Messages API client for the first-party API or compatible gateways."""
 
     def __init__(self, settings: AnthropicSettings):
         self.settings = settings
@@ -48,9 +49,10 @@ class AnthropicCompatibleLLM(BaseLLM):
         headers = {
             "content-type": "application/json",
             "anthropic-version": self.settings.anthropic_version,
-            "authorization": self._authorization_header(),
             "x-api-key": self._raw_token(),
         }
+        if self.settings.use_authorization_header:
+            headers["authorization"] = self._authorization_header()
 
         url = self._messages_url()
         try:
@@ -60,13 +62,13 @@ class AnthropicCompatibleLLM(BaseLLM):
                 data = response.json()
         except httpx.ConnectError as exc:
             raise RuntimeError(
-                f"Could not connect to Anthropic/QGenie gateway at {url}. "
-                "The hostname may not resolve from this network; verify ANTHROPIC_BASE_URL, VPN, or corporate DNS."
+                f"Could not connect to Anthropic-compatible endpoint at {url}. "
+                "Verify ANTHROPIC_BASE_URL, network access, VPN, or corporate DNS."
             ) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:1000] if exc.response is not None else ""
             raise RuntimeError(
-                f"Anthropic/QGenie gateway returned HTTP {exc.response.status_code}: {body}"
+                f"Anthropic-compatible endpoint returned HTTP {exc.response.status_code}: {body}"
             ) from exc
         return self._extract_text(data)
 

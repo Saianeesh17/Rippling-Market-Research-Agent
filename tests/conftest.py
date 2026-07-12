@@ -6,8 +6,12 @@ import pytest
 @pytest.fixture(autouse=True)
 def disable_live_llm_for_tests(monkeypatch, tmp_path):
     monkeypatch.setenv("USE_LLM", "false")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOJEN", "")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "")
+    monkeypatch.setenv("ANTHROPIC_VERIFY_SSL", "true")
     monkeypatch.setenv("GROQ_API_KEY", "")
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("GOOGLE_API_KEY", "")

@@ -137,6 +137,16 @@ class LLMCallLog(BaseModel):
     timestamp: str
 
 
+class ReportQuestionLog(BaseModel):
+    question: str
+    route: str
+    answer: str
+    reason: str
+    search_query: Optional[str] = None
+    source_ids: List[str] = Field(default_factory=list)
+    timestamp: str
+
+
 class SourceAnalysis(BaseModel):
     analysis_id: str
     source_id: str
@@ -254,6 +264,7 @@ class FinalReport(BaseModel):
     coverage_gaps: List[CoverageGap]
     tool_call_logs: List[ToolCallLog]
     llm_call_logs: List[LLMCallLog] = Field(default_factory=list)
+    report_question_logs: List[ReportQuestionLog] = Field(default_factory=list)
     category_report_sections: List[CategoryReportSection] = Field(default_factory=list)
     extracted_claims: List[ExtractedClaim]
     messaging_summary: Optional[MessagingSummary]

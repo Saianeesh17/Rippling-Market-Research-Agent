@@ -16,6 +16,7 @@ from src.schemas import (
     MessagingSummary,
     PlannerDecision,
     RecentChange,
+    ReportQuestionLog,
     ResearchPlan,
     RipplingOpportunity,
     SourceAnalysis,
@@ -36,6 +37,7 @@ class AgentState(BaseModel):
     planner_decision: Optional[PlannerDecision] = None
     tool_call_logs: List[ToolCallLog] = Field(default_factory=list)
     llm_call_logs: List[LLMCallLog] = Field(default_factory=list)
+    report_question_logs: List[ReportQuestionLog] = Field(default_factory=list)
     source_analyses: List[SourceAnalysis] = Field(default_factory=list)
     category_report_sections: List[CategoryReportSection] = Field(default_factory=list)
     extracted_claims: List[ExtractedClaim] = Field(default_factory=list)
