@@ -65,6 +65,7 @@ def map_rippling_opportunities(state: AgentState) -> AgentState:
 
 
 def _map_real_source_rippling_opportunities(state: AgentState) -> AgentState:
+    # Keep this deterministic: the final LLM synthesizes prose, but these opportunities must remain present and stable.
     pillars = [pillar.pillar for pillar in RIPPLING_POSITIONING_PILLARS]
     base_pillars = [
         pillar

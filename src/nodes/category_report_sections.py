@@ -185,6 +185,7 @@ def _ensure_numbered_sources(markdown: str, sources: list[SourceRecord]) -> str:
 
 
 def _normalize_category_markdown(markdown: str, title: str) -> str:
+    # Some providers collapse headings, prose, and Sources onto one line; normalize before final assembly.
     normalized = clean_template_placeholders(markdown).replace("\r\n", "\n").replace("\r", "\n").strip()
     normalized = _normalize_opening_heading(normalized, title)
     normalized = _normalize_sources_block(normalized)

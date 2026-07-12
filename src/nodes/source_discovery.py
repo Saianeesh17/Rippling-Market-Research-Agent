@@ -74,6 +74,7 @@ class ToolUsingSourceDiscoveryAgent:
                 continue
 
             try:
+                # Resolver tools populate context for downstream tools, such as LinkedIn URL before Apify.
                 result = tool.run(
                     ToolInput(
                         competitor_name=state.competitor.name,
@@ -166,6 +167,7 @@ def run_source_discovery(
 
     categories = [category] if category else [task.category for task in state.research_plan.tasks]
     for task_category in categories:
+        # Real-source mode keeps LLM reports from falling back to dummy fixtures when APIs are missing.
         tools = get_tools_for_category(task_category, real_only=state.real_sources_only)
         agent = ToolUsingSourceDiscoveryAgent(task_category, tools)
         found = agent.discover(state, specific_tool_name=specific_tool_name)
@@ -184,6 +186,7 @@ def limit_sources_preserving_categories(sources: List[SourceRecord], max_sources
     if max_sources <= 0 or len(sources) <= max_sources:
         return sources
 
+    # Round-robin by category so broad reports do not get dominated by whichever tool returned first.
     grouped: dict[str, list[SourceRecord]] = {category: [] for category in SOURCE_CATEGORIES}
     grouped["__other__"] = []
     for source in sources:

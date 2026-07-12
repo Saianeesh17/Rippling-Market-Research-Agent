@@ -42,6 +42,7 @@ def set_cached_json(namespace: str, key: str, data: dict[str, Any]) -> Path:
 
 
 def cache_path(namespace: str, key: str) -> Path:
+    # Hash the full key so URLs, prompts, and API payloads can safely become filesystem paths.
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
     safe_namespace = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in namespace)
     return cache_dir() / safe_namespace / f"{digest}.json"

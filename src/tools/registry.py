@@ -95,5 +95,6 @@ TOOL_REGISTRY: Dict[str, List[BaseSourceTool]] = {
 def get_tools_for_category(category: str, *, real_only: bool = False) -> List[BaseSourceTool]:
     tools = TOOL_REGISTRY.get(category, [])
     if real_only:
+        # Dummy tools are useful offline, but LLM runs must only cite real public-source adapters.
         return [tool for tool in tools if not getattr(tool, "is_dummy_tool", False)]
     return tools

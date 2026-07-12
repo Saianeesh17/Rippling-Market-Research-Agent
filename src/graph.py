@@ -33,6 +33,7 @@ def run_graph(
 ) -> AgentState:
     llm = llm or create_llm(use_llm)
     state = AgentState(user_input=competitor)
+    # LLM-authored reports must not mix real evidence with deterministic dummy fixtures.
     state.real_sources_only = llm is not None
     if state.real_sources_only:
         state.logs.append("Real-source mode enabled: dummy source tools are disabled for this run.")
@@ -43,6 +44,7 @@ def run_graph(
     state = detect_coverage_gaps(state)
     state = decide_next_step(state, llm=llm)
 
+    # Keep replanning bounded so one weak category can be improved without turning the run into an open-ended crawl.
     if state.planner_decision and state.planner_decision.action == "search_deeper":
         state.replanning_cycles += 1
         state.logs.append(
@@ -60,6 +62,7 @@ def run_graph(
     if interactive and state.planner_decision and state.planner_decision.action == "ask_user":
         state.logs.append("Interactive mode would ask the user; dummy CLI defaults to continuing.")
 
+    # Category subagent sections are generated before synthesis so the final writer can preserve detailed citations.
     state = analyze_sources(state)
     state = extract_evidence_claims(state)
     state = generate_category_report_sections(state, llm=llm)

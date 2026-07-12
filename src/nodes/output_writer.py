@@ -319,6 +319,7 @@ def _coerce_markdown_report(response: str) -> str:
 def _ensure_detailed_category_sections(markdown: str, state: AgentState) -> str:
     if not state.category_report_sections:
         return markdown
+    # The final LLM can summarize or mangle detailed sections, so preserved category subagent output wins here.
     detailed_section = _render_detailed_category_sections(state)
     if _has_generated_detailed_category_section(markdown):
         return _replace_generated_detailed_category_section(markdown, detailed_section)
@@ -377,6 +378,7 @@ def _detailed_category_section_bounds(markdown: str) -> tuple[int, int] | None:
         stripped = lines[index].strip()
         if not stripped.startswith("## "):
             continue
+        # Malformed category headings sometimes include body text on the same line; keep them inside this block.
         if _is_rippling_market_opportunities_heading(stripped) or _is_final_report_boundary_heading(stripped):
             end_index = index
             break

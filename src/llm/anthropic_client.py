@@ -96,6 +96,7 @@ class AnthropicCompatibleLLM(BaseLLM):
         return token
 
     def _thinking_config(self) -> dict[str, str] | None:
+        # Default to disabled so thinking blocks do not consume the report's visible output budget.
         mode = self.settings.thinking_mode.strip().lower()
         if mode in {"", "auto", "omit", "none"}:
             return None
