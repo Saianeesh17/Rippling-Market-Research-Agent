@@ -155,7 +155,7 @@ After source analysis and evidence extraction, each research category gets its o
 - Press and news
 - Comparison pages
 
-Each subagent receives only its category's sources and analyses and generates a markdown section with numeric inline citations such as `[1]`. Each section ends with a `Sources` list mapping citation numbers to source titles and URLs. The final LLM call is reserved for synthesis: executive summary, confidence and gaps, Rippling opportunities, and campaign implications.
+Each subagent receives only its category's sources and analyses and generates a markdown section with numeric inline citations such as `[1]`. Each section ends with a `Sources` list mapping citation numbers to source titles and URLs. The final LLM call is reserved for synthesis: executive summary, confidence and gaps, and campaign implications. Rippling opportunities are owned by a separate validated mapper step.
 
 ## Architecture
 
@@ -288,6 +288,7 @@ Current LLM-backed steps:
 
 - Planner decision: the model receives source coverage, gaps, replanning limits, and the bounded tool registry, then returns a validated `PlannerDecision`.
 - Category report sections: each populated category gets its own specialist LLM section with inline citations and a `Sources` list.
+- Rippling opportunity mapper: the model receives static Rippling positioning plus grounded competitor evidence, then returns validated positioning gaps and campaign opportunities. Failed LLM calls fall back to deterministic mapping.
 - Final markdown report: the model receives the structured report data and writes the final markdown brief.
 - Post-report Q&A: when `--interactive` is used, the model routes each follow-up question to either answer directly from the generated report or run a follow-up Exa search if the report does not contain enough context.
 

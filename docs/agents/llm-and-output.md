@@ -16,6 +16,7 @@ Do not expose `.env` values in CLI output, docs, logs, or commits.
 
 - `planner_decision`: decides whether one additional bounded search pass is useful.
 - Category report section calls: one call per category, each with only that category's sources and analyses.
+- `rippling_opportunity_mapper`: generates the canonical Rippling market opportunities from static Rippling positioning and grounded target-company evidence, with schema validation and deterministic fallback.
 - `final_markdown_report`: synthesizes the full brief from compacted report context and preserved category sections.
 - Report Q&A calls: answer from the generated brief when possible; use Exa follow-up search when the answer is not already in the report.
 
@@ -26,7 +27,7 @@ The final report intentionally has two layers:
 - The final LLM writes the main narrative, executive summary, gaps, confidence notes, and synthesis.
 - Category subagent sections remain the canonical detailed category findings. `output_writer` replaces a generated detailed category section with the preserved subagent markdown so detail and citation lists are not lost.
 
-The Rippling opportunities subsection is appended near the end from deterministic state, not chosen by the final LLM. This keeps the section present, stable, and source-grounded even when the final model is terse.
+The Rippling opportunities subsection is appended near the end from mapper-owned state, not chosen by the final report LLM. In LLM runs, the mapper generates those opportunities from Rippling's static positioning and grounded target-company evidence; if that call fails, the deterministic fallback keeps the section present and source-grounded.
 
 ## Markdown Formatting
 

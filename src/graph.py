@@ -68,7 +68,7 @@ def run_graph(
     state = generate_category_report_sections(state, llm=llm)
     state = summarize_messaging(state)
     state = detect_recent_changes(state)
-    state = map_rippling_opportunities(state)
+    state = map_rippling_opportunities(state, llm=llm)
     state = generate_campaign_angles(state)
     state = evaluate_output(state)
     state = write_outputs(state, output_dir=output_dir, llm=llm)

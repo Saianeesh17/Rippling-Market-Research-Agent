@@ -13,7 +13,7 @@
 7. `extract_evidence_claims`: creates grounded claims that later nodes can cite.
 8. `generate_category_report_sections`: asks one subagent per research category to write the detailed report section with inline numeric citations.
 9. `summarize_messaging` and `detect_recent_changes`: derive cross-source themes and changes.
-10. `map_rippling_opportunities`: deterministically maps evidence to Rippling market opportunities.
+10. `map_rippling_opportunities`: maps evidence to Rippling market opportunities. LLM runs use a dedicated validated mapper call with static Rippling positioning plus grounded competitor evidence; no-LLM runs and failed LLM calls use deterministic fallback mapping.
 11. `generate_campaign_angles`: creates campaign recommendations from the evidence and mapped opportunities.
 12. `evaluate_output`: scores grounding, coverage, caveats, and recommendation quality.
 13. `write_outputs`: writes markdown, JSON, and the run log.

@@ -38,7 +38,7 @@ Use `--no-llm` for deterministic offline checks. Use `--use-llm` only when `.env
 
 - Never print, commit, or copy values from `.env`. Logs and JSON should keep request details redacted.
 - LLM runs use real-source mode. Dummy tools remain for no-LLM/offline testing and should not backfill real LLM reports.
-- The final LLM should synthesize the brief, not decide the canonical Rippling opportunities. `src/nodes/rippling_opportunity_mapper.py` maps those deterministically from grounded evidence.
+- The final report LLM should synthesize the brief, not decide the canonical Rippling opportunities. `src/nodes/rippling_opportunity_mapper.py` owns those opportunities: LLM runs use a dedicated validated opportunity-mapping call seeded with static Rippling positioning and grounded competitor evidence, while no-LLM runs and failed LLM calls use deterministic fallback mapping.
 - Category report sections are canonical detailed findings. `src/nodes/output_writer.py` replaces any final-LLM generated detailed category block with the preserved subagent sections.
 - Markdown cleanup is intentional. Several providers sometimes return single-line headings and source lists; the normalizers prevent entire sections from rendering as one blue heading/link block.
 - Cache TTLs are part of the cost-control model. Prefer tightening payloads and cache keys before raising result limits.
